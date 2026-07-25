@@ -91,8 +91,31 @@ export function buildTopology(
     }
   }
 
+  function markLeaf(leafId: string, t: EndpointTemplate): void {
+    const leaf = nodeById.get(leafId)!;
+    leaf.isEndpoint = true;
+    leaf.documented = documentedSet.has(t.template);
+    leaf.requestCount = t.requestCount;
+    if (findings) {
+      const severities = findings.filter((f) => f.template === t.template).map((f) => f.severity);
+      leaf.maxSeverity = maxSeverityOf(severities);
+    }
+  }
+
   for (const t of templates) {
     const segs = t.template.split('/').filter((s) => s.length > 0);
+
+    // The bare root path ("/") templatises to zero segments — a browser
+    // requesting a homepage is extremely common in real traffic (never
+    // exercised by our synthetic fixture, which has no root-path request).
+    // Give it an explicit root node instead of falling through to an
+    // empty `prefix` that was never registered.
+    if (segs.length === 0) {
+      ensureNode('/', 0, '/', false);
+      markLeaf('/', t);
+      continue;
+    }
+
     let prefix = '';
     let parent: string | null = null;
     for (let i = 0; i < segs.length; i++) {
@@ -105,14 +128,7 @@ export function buildTopology(
       }
       parent = prefix;
     }
-    const leaf = nodeById.get(prefix)!;
-    leaf.isEndpoint = true;
-    leaf.documented = documentedSet.has(t.template);
-    leaf.requestCount = t.requestCount;
-    if (findings) {
-      const severities = findings.filter((f) => f.template === t.template).map((f) => f.severity);
-      leaf.maxSeverity = maxSeverityOf(severities);
-    }
+    markLeaf(prefix, t);
   }
 
   function subtreeTotal(id: string): number {

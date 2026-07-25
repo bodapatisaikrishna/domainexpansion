@@ -112,4 +112,18 @@ describe('buildTopology', () => {
     const b = buildTopology(records, []);
     expect(a).toEqual(b);
   });
+
+  it('handles a bare root-path ("/") request without throwing — regression for a crash found against real NASA-HTTP traffic', () => {
+    const records: AccessLogRecord[] = [
+      rec({ id: 'L1', path: '/', method: 'GET', status: 200 }),
+      rec({ id: 'L2', path: '/api/v1/orders/1001' }),
+    ];
+    const topo = buildTopology(records, []);
+    const root = topo.nodes.find((n) => n.id === '/');
+    expect(root).toBeDefined();
+    expect(root!.isEndpoint).toBe(true);
+    expect(root!.depth).toBe(0);
+    expect(root!.requestCount).toBe(1);
+    expect(topo.stats.observedEndpoints).toBe(2);
+  });
 });
