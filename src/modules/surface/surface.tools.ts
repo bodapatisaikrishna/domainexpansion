@@ -1,6 +1,6 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { ToolDecorator as Tool, ExecutionContext, Injectable, z } from '@nitrostack/core';
+import { ToolDecorator as Tool, Widget, ExecutionContext, Injectable, z } from '@nitrostack/core';
 import type { AccessLogRecord, ToolResult, Severity } from '../../engine/types.js';
 import { runDetection, aggregateEndpoints, buildTopology, parseOpenApiTemplates, neutralise, exportReconstructedSpec, generateAuthzTestSuite } from '../../engine/index.js';
 import { listProviders, listServices, fetchSpec } from '../../integrations/apisguru.js';
@@ -94,6 +94,7 @@ export class SurfaceTools {
       response: { counts: 8252, timeRange: { from: '2026-07-24T12:00:00.000Z', to: '2026-07-24T18:00:00.000Z' }, distinctActors: 120, templatesDiscovered: 34, rejected: { count: 0, reasons: [] } },
     },
   })
+  @Widget('surface-scorecard')
   async ingestAccessLogs(
     input: z.infer<typeof IngestAccessLogsSchema>,
     ctx: ExecutionContext,
@@ -277,6 +278,7 @@ export class SurfaceTools {
     inputSchema: GetApiTopologySchema,
     examples: { request: {}, response: { nodes: [], edges: [], stats: { observedEndpoints: 34, documentedEndpoints: 27, shadowEndpoints: 7, totalRequests: 8252, distinctActors: 120, timeRange: { from: '', to: '' } } } },
   })
+  @Widget('topology-graph')
   async getApiTopology(input: z.infer<typeof GetApiTopologySchema>, ctx: ExecutionContext) {
     if (!this.state.hasLogs()) return noLogsError();
 
@@ -335,6 +337,7 @@ export class SurfaceTools {
     inputSchema: ScanAuthorizationRisksSchema,
     examples: { request: { minSeverity: 'HIGH' }, response: [] },
   })
+  @Widget('findings-list')
   async scanAuthorizationRisks(input: z.infer<typeof ScanAuthorizationRisksSchema>, ctx: ExecutionContext) {
     if (!this.state.hasLogs()) return noLogsError();
     const { documentedTemplates } = this.state.computeDocumented();
@@ -365,6 +368,7 @@ export class SurfaceTools {
     inputSchema: GetFindingEvidenceSchema,
     examples: { request: { findingId: 'r1_cross_actor_abc123def456' }, response: [] },
   })
+  @Widget('evidence-viewer')
   async getFindingEvidence(input: z.infer<typeof GetFindingEvidenceSchema>, ctx: ExecutionContext) {
     if (!this.state.hasLogs()) return noLogsError();
     const records = this.state.getRecords();
