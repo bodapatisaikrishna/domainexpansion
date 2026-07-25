@@ -20,6 +20,11 @@ interface EvidenceRecord {
 }
 type ToolResult = { ok: true; data: EvidenceRecord[] } | { ok: false; message: string; nextAction: string };
 
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n}B`;
+  return `${(n / 1024).toFixed(1)}KB`;
+}
+
 function statusColor(status: number): string {
   if (status >= 500) return palette.severity.CRITICAL;
   if (status >= 400) return palette.severity.HIGH;
@@ -82,7 +87,7 @@ export default function EvidenceViewerWidget() {
               <span style={{ color: palette.text }}>{r.method}</span>
               <span style={{ color: palette.accent, fontWeight: 700 }}>{r.actor.sub ?? 'anonymous'}</span>
               {r.actor.role && <span style={{ color: palette.textFaint }}>({r.actor.role})</span>}
-              <span style={{ color: palette.textFaint, marginLeft: 'auto' }}>{r.ip} · {r.latencyMs}ms</span>
+              <span style={{ color: palette.textFaint, marginLeft: 'auto' }}>{r.ip} · {r.latencyMs}ms · {formatBytes(r.respBytes)}</span>
             </div>
             <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
               <UntrustedField value={r.path} />

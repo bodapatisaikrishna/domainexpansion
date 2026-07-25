@@ -109,7 +109,10 @@ export function buildTopology(
     // requesting a homepage is extremely common in real traffic (never
     // exercised by our synthetic fixture, which has no root-path request).
     // Give it an explicit root node instead of falling through to an
-    // empty `prefix` that was never registered.
+    // empty `prefix` that was never registered. depth is defined as "number
+    // of path segments" throughout this function (segs[i] gets depth i+1
+    // below) so the zero-segment root correctly gets depth 0 — not an
+    // off-by-one, the same rule applied consistently at n=0.
     if (segs.length === 0) {
       ensureNode('/', 0, '/', false);
       markLeaf('/', t);
