@@ -145,6 +145,33 @@ Copy-pasteable agent prompts, in order:
 
 34 endpoint templates observed, 27 documented, 7 shadow.
 
+## Real-data validation: not just a fixture we wrote ourselves
+
+Passing tests against `acme-prod` proves the detection engine is internally consistent — it agrees with the same person who wrote both the detector and the expected answers. It doesn't prove the tool finds anything in real, messy, non-curated traffic. `scripts/validate-real-data.ts` is the actual answer to that:
+
+1. Downloads **NASA-HTTP (July 1995)** — a real, public, widely-used research access-log corpus from a static file server with zero API traffic, zero authentication, zero attacks of any kind. This is the noisy background.
+2. Generates a small, **fully disclosed** block of synthetic Combined Log Format lines (`generateDisclosedInjection()` in that script — every line is deterministic, and the function's header comment lists exactly what's injected and why: nothing hidden).
+3. Concatenates real background + disclosed injection, runs it through the real tool layer, and checks whether the seven rules found exactly what was planted — inside 50,000+ lines of genuinely unrelated real traffic, not in isolation.
+
+```bash
+npx tsx scripts/validate-real-data.ts
+```
+
+Actual output from the last run — all six disclosed patterns found, none missed:
+
+```
+R1_CROSS_ACTOR         on /api/v1/accounts/{id}        -> FOUND  (severity=CRITICAL, score=89)
+R2_ENUMERATION         on /api/v1/documents/{docId}    -> FOUND  (severity=HIGH, score=83)
+R3_AUTH_GAP            on /api/v1/reports              -> FOUND  (severity=HIGH, score=70)
+R4_EXISTENCE_ORACLE    on /api/v1/invoices/{invoiceId} -> FOUND  (severity=MEDIUM, score=60)
+R6_UNGUARDED_WRITE     on /api/v1/sessions/{id}        -> FOUND  (severity=MEDIUM, score=55)
+R7_LOG_INJECTION       on /api/v1/accounts/{id}        -> FOUND  (severity=CRITICAL, score=85)
+
+ALL disclosed injections were found.
+```
+
+This does **not** prove the tool would have found real vulnerabilities already sitting in NASA's 1995 traffic — there are none; it's a static file server. It proves the seven detection rules correctly identify their attack shapes when buried in a real, disorganised background instead of only in an isolated dataset built to pass its own test. `fixtures/real-data-validation/` (both the real NASA sample and the disclosed injection block) is committed, and `tests/real-data-validation.test.ts` locks this exact result in as a permanent regression test.
+
 ## Limitations
 
 **Access logs cannot prove an authorization violation.** This tool surfaces prioritised, evidence-backed *leads* — patterns strongly correlated with real BOLA/shadow-API/log-injection incidents — not confirmed breaches. A human (or the owning team, via `generate_authz_test_suite`) still has to verify against the actual service.
