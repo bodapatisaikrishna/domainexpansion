@@ -28,9 +28,12 @@ export class SurfaceResources {
   @Resource({
     uri: 'logs://fixtures/{scenarioId}',
     name: 'Seeded access-log fixture',
-    description: 'A bundled synthetic access-log dataset (e.g. "acme-prod"), for inspection or re-ingestion. ' +
-      'Path/query/User-Agent fields are neutralised before being returned, same as evidence records — this is ' +
-      'still attacker-influenced content, just served in bulk rather than per-finding.',
+    description: 'Read-only inspection of a bundled synthetic access-log dataset by concrete URI, e.g. ' +
+      '"logs://fixtures/acme-prod" — {scenarioId} MUST be replaced with an actual fixture id ("acme-prod" is the ' +
+      'only one bundled); the bare template URI will not resolve. This is NOT how you load a fixture for analysis — ' +
+      'for that, call the ingest_access_logs TOOL with { source: "fixture", fixtureId: "acme-prod" } directly, no ' +
+      'need to check this resource first. Path/query/User-Agent fields are neutralised before being returned, same ' +
+      'as evidence records — this is still attacker-influenced content, just served in bulk rather than per-finding.',
     mimeType: 'application/json',
   })
   async getLogsFixture(uri: string, ctx: ExecutionContext) {
@@ -48,7 +51,11 @@ export class SurfaceResources {
   @Resource({
     uri: 'registry://apisguru/{provider}/{service}',
     name: 'APIs.guru published contract',
-    description: 'A real, published OpenAPI spec fetched from the APIs.guru registry (cache-first, works offline once warmed). {service} may be empty for single-API providers.',
+    description: 'A real, published OpenAPI spec fetched from the APIs.guru registry (cache-first, works offline ' +
+      'once warmed) by concrete URI, e.g. "registry://apisguru/stripe.com/" — {provider} and {service} MUST be ' +
+      'replaced with actual values (the bare template URI will not resolve); {service} may be left empty for ' +
+      'single-API providers like stripe.com. To actually IMPORT a registry spec for shadow-endpoint comparison, ' +
+      'call the import_registry_spec TOOL instead — this resource is for inspecting the raw spec document itself.',
     mimeType: 'application/json',
   })
   async getRegistrySpec(uri: string, ctx: ExecutionContext) {
