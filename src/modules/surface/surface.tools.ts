@@ -232,6 +232,7 @@ export class SurfaceTools {
       ok: true,
       data: { documentedCount: documentedTemplates.length, orphanedInSpec },
       suggestedNext: [
+        { tool: 'list_shadow_endpoints', args: {}, why: 'list the specific endpoints that are undocumented against this spec' },
         { tool: 'get_api_topology', args: {}, why: 'view the reconstructed API surface with shadow endpoints highlighted' },
         { tool: 'scan_authorization_risks', args: {}, why: 'run the detection rules now that documented/shadow status is known' },
       ],
