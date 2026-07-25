@@ -1,0 +1,109 @@
+import { describe, it, expect } from 'vitest';
+import { TestingModule, createMockContext } from '@nitrostack/core/testing';
+import { SurfaceStateService } from '../src/modules/surface/state.js';
+import { SurfaceTools } from '../src/modules/surface/surface.tools.js';
+
+/**
+ * Exercises the real MCP tool layer (DI, zod validation, ToolResult shaping)
+ * end to end, not just the engine functions underneath — the Stage 8 gate
+ * this build pack asks for.
+ */
+async function buildTools(): Promise<SurfaceTools> {
+  const module = TestingModule.create().addProvider(SurfaceStateService).addProvider(SurfaceTools).compile();
+  return module.get(SurfaceTools);
+}
+
+describe('MCP surface: SurfaceTools', () => {
+  it('scan_authorization_risks on empty state returns NO_LOGS_INGESTED with a recovery nextAction', async () => {
+    const tools = await buildTools();
+    const ctx = createMockContext();
+    const result = await tools.scanAuthorizationRisks({}, ctx);
+    expect(result).toEqual({
+      ok: false,
+      code: 'NO_LOGS_INGESTED',
+      message: 'No access logs have been ingested yet.',
+      nextAction: "call ingest_access_logs with source 'fixture', fixtureId 'acme-prod' first",
+    });
+  });
+
+  it('full pipeline: ingest fixture -> import spec -> scan finds the ground-truth results via the real tool layer', async () => {
+    const tools = await buildTools();
+    const ctx = createMockContext();
+
+    const ingestResult = await tools.ingestAccessLogs({ source: 'fixture', fixtureId: 'acme-prod' }, ctx);
+    expect(ingestResult.ok).toBe(true);
+    if (!ingestResult.ok) throw new Error('unreachable');
+    expect(ingestResult.data.counts).toBe(8252);
+    expect(ingestResult.data.templatesDiscovered).toBe(34);
+    expect(ingestResult.data.rejected).toEqual({ count: 0, reasons: [] });
+
+    const specResult = await tools.importOpenApiSpec({ source: 'fixture', fixtureId: 'acme-openapi' }, ctx);
+    expect(specResult.ok).toBe(true);
+    if (!specResult.ok) throw new Error('unreachable');
+    expect(specResult.data.documentedCount).toBe(27);
+
+    const scanResult = await tools.scanAuthorizationRisks({}, ctx);
+    expect(scanResult.ok).toBe(true);
+    if (!scanResult.ok) throw new Error('unreachable');
+    const findings = scanResult.data;
+
+    const exportFindings = findings.filter((f) => f.template === '/internal/v0/export/customers');
+    expect(exportFindings.every((f) => f.severity === 'CRITICAL')).toBe(true);
+    expect(exportFindings.map((f) => f.rule).sort()).toEqual(['R3_AUTH_GAP', 'R5_SHADOW']);
+
+    expect(findings.some((f) => f.rule === 'R7_LOG_INJECTION')).toBe(true);
+    expect(findings.some((f) => f.template === '/api/v1/admin/feature-flags')).toBe(false);
+    expect(findings.some((f) => f.template === '/api/v1/auth/login')).toBe(false);
+
+    // get_finding_evidence returns neutralised records, wrapped in <untrusted>.
+    const topFinding = findings[0];
+    const evidenceResult = await tools.getFindingEvidence({ findingId: topFinding.id }, ctx);
+    expect(evidenceResult.ok).toBe(true);
+    if (!evidenceResult.ok) throw new Error('unreachable');
+    expect(evidenceResult.data.length).toBeGreaterThan(0);
+    for (const record of evidenceResult.data) {
+      expect(record.path).toMatch(/^<untrusted field="path">.*<\/untrusted>$/);
+      expect(record.ua).toMatch(/^<untrusted field="ua">.*<\/untrusted>$/);
+    }
+
+    // get_finding_evidence with an unknown id returns FINDING_NOT_FOUND, not a throw.
+    const missing = await tools.getFindingEvidence({ findingId: 'does_not_exist' }, ctx);
+    expect(missing).toEqual({
+      ok: false,
+      code: 'FINDING_NOT_FOUND',
+      message: 'No finding with id "does_not_exist".',
+      nextAction: 'call scan_authorization_risks to list current finding ids',
+    });
+  });
+
+  it('inline ingestion rejects malformed records without failing the whole batch', async () => {
+    const tools = await buildTools();
+    const ctx = createMockContext();
+    const good = {
+      id: 'L1', ts: '2026-01-01T00:00:00.000Z', method: 'GET', path: '/a', query: null, status: 200,
+      actor: { sub: 'usr_1', role: 'user' }, ip: '1.2.3.4', latencyMs: 10, respBytes: 100, ua: 'test',
+    };
+    const bad = { id: 'L2' }; // missing required fields
+    const result = await tools.ingestAccessLogs({ source: 'inline', records: [good, bad] }, ctx);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.data.counts).toBe(1);
+    expect(result.data.rejected.count).toBe(1);
+    expect(result.data.rejected.reasons.length).toBe(1);
+  });
+
+  it('inline ingestion over 50,000 records returns PAYLOAD_TOO_LARGE', async () => {
+    const tools = await buildTools();
+    const ctx = createMockContext();
+    const records = Array.from({ length: 50_001 }, () => ({}));
+    const result = await tools.ingestAccessLogs({ source: 'inline', records }, ctx);
+    expect(result).toMatchObject({ ok: false, code: 'PAYLOAD_TOO_LARGE' });
+  });
+
+  it('ingest_access_logs with an unknown fixtureId returns FIXTURE_NOT_FOUND', async () => {
+    const tools = await buildTools();
+    const ctx = createMockContext();
+    const result = await tools.ingestAccessLogs({ source: 'fixture', fixtureId: 'does-not-exist' }, ctx);
+    expect(result).toMatchObject({ ok: false, code: 'FIXTURE_NOT_FOUND' });
+  });
+});

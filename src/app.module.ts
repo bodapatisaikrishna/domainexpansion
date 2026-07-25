@@ -1,4 +1,5 @@
 import { McpApp, Module, ConfigModule } from '@nitrostack/core';
+import { SurfaceModule } from './modules/surface/surface.module.js';
 
 /**
  * Root Application Module — DomainExpansion.ai
@@ -6,10 +7,6 @@ import { McpApp, Module, ConfigModule } from '@nitrostack/core';
  * Reconstructs an enterprise's real API attack surface from access logs,
  * diffs it against a published OpenAPI contract to find shadow endpoints,
  * and reports authorization risk with citable log evidence.
- *
- * The `SurfaceModule` (src/modules/surface/) is wired in at Stage 8 once the
- * detection engine (src/engine/**) exists. Until then this boots with no
- * tools registered — that's expected at this stage.
  */
 @McpApp({
     module: AppModule,
@@ -26,6 +23,7 @@ import { McpApp, Module, ConfigModule } from '@nitrostack/core';
     description: 'API attack-surface reconstruction and BOLA risk reporting from access logs',
     imports: [
         ConfigModule.forRoot(),
+        SurfaceModule,
     ],
 })
 export class AppModule { }
