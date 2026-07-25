@@ -73,12 +73,25 @@ export function ShadowChip() {
   );
 }
 
-export function StatTile({ label, value, accent }: { label: string; value: string | number; accent?: string }) {
+export function StatTile({
+  label,
+  value,
+  accent,
+  caption,
+  captionColor,
+}: {
+  label: string;
+  value: string | number;
+  accent?: string;
+  /** Small line under the label — used for e.g. "call failed, retrying" so a failure never looks identical to a real 0. */
+  caption?: string;
+  captionColor?: string;
+}) {
   return (
     <div
       style={{
         background: palette.panel,
-        border: `1px solid ${palette.border}`,
+        border: `1px solid ${caption ? palette.severity.HIGH : palette.border}`,
         borderRadius: 8,
         padding: '12px 16px',
         flex: '1 1 120px',
@@ -87,6 +100,9 @@ export function StatTile({ label, value, accent }: { label: string; value: strin
     >
       <div style={{ fontSize: 26, fontWeight: 800, color: accent ?? palette.text, lineHeight: 1.1 }}>{value}</div>
       <div style={{ fontSize: 11, color: palette.textMuted, marginTop: 4, textTransform: 'uppercase', letterSpacing: 0.4 }}>{label}</div>
+      {caption && (
+        <div style={{ fontSize: 10, color: captionColor ?? palette.severity.HIGH, marginTop: 3 }}>{caption}</div>
+      )}
     </div>
   );
 }

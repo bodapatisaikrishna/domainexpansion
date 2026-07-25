@@ -14,8 +14,14 @@ interface IngestData {
   rejected: { count: number; reasons: string[] };
 }
 type IngestResult = { ok: true; data: IngestData } | { ok: false; message: string; nextAction: string };
-type ShadowResult = { ok: true; data: { shadow: unknown[] } };
-type ScanResult = { ok: true; data: { severity: string }[] };
+type ShadowResult = { ok: true; data: { shadow: unknown[] } } | { ok: false; message: string };
+type ScanResult = { ok: true; data: { severity: string }[] } | { ok: false; message: string };
+
+// Explicit tri-state: a failed background call must never render identically
+// to a real "0 findings" — a security scorecard silently showing a false
+// all-clear on a network/tool error is a false-negative risk, not a
+// cosmetic bug. 'loading' -> number (real result) or 'error' (never 0).
+type CountState = 'loading' | 'error' | number;
 
 export default function SurfaceScorecardWidget() {
   const { isReady, getToolOutput, callTool } = useWidgetSDK();
@@ -25,8 +31,8 @@ export default function SurfaceScorecardWidget() {
   // ingest_access_logs' own output — this widget calls them itself on mount
   // to fill in the other two numbers, since the tool it's bound to can't
   // know shadow/critical counts before a spec is even imported.
-  const [shadowCount, setShadowCount] = useState<number | null>(null);
-  const [criticalCount, setCriticalCount] = useState<number | null>(null);
+  const [shadowCount, setShadowCount] = useState<CountState>('loading');
+  const [criticalCount, setCriticalCount] = useState<CountState>('loading');
 
   useEffect(() => {
     if (!result?.ok) return;
@@ -36,17 +42,17 @@ export default function SurfaceScorecardWidget() {
       .then((res) => {
         if (cancelled) return;
         const parsed: ShadowResult = JSON.parse(res.result);
-        setShadowCount(parsed.ok ? parsed.data.shadow.length : 0);
+        setShadowCount(parsed.ok ? parsed.data.shadow.length : 'error');
       })
-      .catch(() => !cancelled && setShadowCount(0));
+      .catch(() => !cancelled && setShadowCount('error'));
 
     callTool('scan_authorization_risks', { minSeverity: 'CRITICAL' })
       .then((res) => {
         if (cancelled) return;
         const parsed: ScanResult = JSON.parse(res.result);
-        setCriticalCount(parsed.ok ? parsed.data.length : 0);
+        setCriticalCount(parsed.ok ? parsed.data.length : 'error');
       })
-      .catch(() => !cancelled && setCriticalCount(0));
+      .catch(() => !cancelled && setCriticalCount('error'));
 
     return () => {
       cancelled = true;
@@ -59,6 +65,14 @@ export default function SurfaceScorecardWidget() {
 
   const { data } = result;
 
+  // Renders 'loading' as '…', a real number as itself, and 'error' as a
+  // visibly-broken '!' with a red border and caption — never as 0.
+  function countProps(state: CountState, accent: string): { value: string | number; accent: string; caption?: string; captionColor?: string } {
+    if (state === 'loading') return { value: '…', accent };
+    if (state === 'error') return { value: '!', accent: palette.severity.HIGH, caption: 'call failed — not a real 0', captionColor: palette.severity.HIGH };
+    return { value: state, accent };
+  }
+
   return (
     <WidgetShell>
       <div style={{ padding: 16 }}>
@@ -69,8 +83,8 @@ export default function SurfaceScorecardWidget() {
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <StatTile label="Endpoints Observed" value={data.templatesDiscovered} />
-          <StatTile label="Shadow Endpoints" value={shadowCount ?? '…'} accent={palette.shadow} />
-          <StatTile label="Critical Findings" value={criticalCount ?? '…'} accent={palette.severity.CRITICAL} />
+          <StatTile label="Shadow Endpoints" {...countProps(shadowCount, palette.shadow)} />
+          <StatTile label="Critical Findings" {...countProps(criticalCount, palette.severity.CRITICAL)} />
           <StatTile label="Actors Seen" value={data.distinctActors} accent={palette.accent} />
         </div>
       </div>
