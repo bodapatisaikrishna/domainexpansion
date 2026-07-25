@@ -41,6 +41,35 @@ describe('templatisePaths', () => {
     expect([...templates][0]).toBe('/api/tenants/{tenantId}/users/{userId}');
   });
 
+  it('does NOT collapse >=5 sibling static filenames (leaf nodes) via rule (b) — regression for a false {id} found against real NASA-HTTP traffic', () => {
+    // All five are pure leaves (nothing follows them), so their grandchild
+    // key sets are all empty. Before the fix, jaccard(empty, empty) === 1,
+    // so every pair "matched" and rule (b) fired despite the filenames
+    // being unrelated — no genuine subtree-shape evidence, just the
+    // coincidence of having nothing below them.
+    const files = ['72HC31.GIF', '72HC400.GIF', '72HC401.GIF', '72HC404.GIF', '72HC405.GIF'];
+    const paths = files.map((f) => `/history/apollo/apollo-16/${f}`);
+    const result = templatisePaths(paths);
+    const templates = new Set(result.values());
+    expect(templates.size).toBe(5); // each filename stays its own distinct static template
+    for (const f of files) {
+      expect(templates).toContain(`/history/apollo/apollo-16/${f}`);
+    }
+  });
+
+  it('still collapses >=5 siblings via rule (b) when they share genuine non-empty subtree structure', () => {
+    // Same shape as the leaf-filename case above, but each sibling is
+    // followed by an identical real sub-resource — genuine evidence the
+    // fix must not have broken.
+    const tenants = ['acme', 'initech', 'umbrella', 'wayne', 'stark'];
+    const paths = tenants.flatMap((t) => [`/api/orgs/${t}/settings`, `/api/orgs/${t}/billing`]);
+    const result = templatisePaths(paths);
+    const templates = new Set(result.values());
+    expect(templates).toContain('/api/orgs/{id}/settings');
+    expect(templates).toContain('/api/orgs/{id}/billing');
+    expect(templates.size).toBe(2);
+  });
+
   it('does not collapse fewer than 5 non-regex-matching siblings even with similar subtrees', () => {
     const tenants = ['acme', 'initech', 'umbrella']; // only 3, below the rule-(b) floor of 5
     const paths = tenants.flatMap((t) => [`/api/tenants/${t}/users/1`]);

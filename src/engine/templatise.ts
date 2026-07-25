@@ -45,7 +45,19 @@ function matchesKnownIdShape(value: string): boolean {
 }
 
 function jaccard(a: Set<string>, b: Set<string>): number {
-  if (a.size === 0 && b.size === 0) return 1;
+  // Two EMPTY grandchild sets are not "identical shape" — they're the
+  // absence of any shape evidence at all. Treating empty/empty as a perfect
+  // match was a real bug: on real traffic (NASA-HTTP), five or more sibling
+  // static filenames — genuinely unrelated leaf files like different .GIFs
+  // in the same directory — all have empty grandchild sets by construction
+  // (nothing follows a leaf file), so every pair trivially "matched" and
+  // rule (b) collapsed them into a false {id} parameter. Returning 0 here
+  // means a set of leaf siblings needs an actual reason to collapse (rule
+  // (a)'s ID-shape check), not just the coincidence of having nothing below
+  // them. Legitimate rule-(b) cases (tenant slugs each followed by the same
+  // real sub-resources, e.g. "/users", "/orders") are unaffected — their
+  // overlap comes from genuinely shared non-empty key sets.
+  if (a.size === 0 && b.size === 0) return 0;
   let intersection = 0;
   for (const x of a) if (b.has(x)) intersection++;
   const union = a.size + b.size - intersection;
