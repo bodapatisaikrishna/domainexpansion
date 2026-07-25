@@ -1,11 +1,8 @@
 ## Live deployment
 
-**⚠️ Not deployed yet.** `npm run cache:warm`-hardened and demo-ready, but the NitroCloud deploy step (`nitrostack login && nitrostack deploy`) needs the account owner's credentials — I built it deploy-ready, run the command below and paste the resulting URL here as the first line of this file:
+## [https://domainexpansion-6a64d-neural-nexus-amrita-university-coimbatore.app.nitrocloud.ai/](https://domainexpansion-6a64d-neural-nexus-amrita-university-coimbatore.app.nitrocloud.ai/)
 
-```bash
-npx @nitrostack/cli login
-npx @nitrostack/cli deploy
-```
+Verified live via a real MCP JSON-RPC handshake (`initialize` → `tools/list`) — all 10 tools respond correctly with a real session id. Note: if you're reading this shortly after a `main` update, redeploy to pick up the latest commits; the CLI has no `login`/`deploy` command in the current published version, so deploys go through the NitroCloud dashboard rather than `nitrostack-cli`.
 
 ---
 
