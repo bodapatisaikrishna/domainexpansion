@@ -106,4 +106,34 @@ describe('MCP surface: SurfaceTools', () => {
     const result = await tools.ingestAccessLogs({ source: 'fixture', fixtureId: 'does-not-exist' }, ctx);
     expect(result).toMatchObject({ ok: false, code: 'FIXTURE_NOT_FOUND' });
   });
+
+  it('ingests real Apache/nginx Combined Log Format text end to end through the real tool layer', async () => {
+    const tools = await buildTools();
+    const ctx = createMockContext();
+    const rawText = [
+      '127.0.0.1 - frank [10/Oct/2000:13:55:36 -0700] "GET /apache_pub/image.gif HTTP/1.0" 200 2326 "-" "Mozilla/4.08"',
+      '10.0.0.9 - - [10/Oct/2000:13:55:37 -0700] "POST /login HTTP/1.1" 401 100 "-" "curl/7.1"',
+      'not a valid log line at all',
+    ].join('\n');
+
+    const result = await tools.ingestAccessLogs({ source: 'combined-log-format', rawText }, ctx);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.data.counts).toBe(2);
+    expect(result.data.rejected.count).toBe(1);
+    expect(result.data.templatesDiscovered).toBeGreaterThan(0);
+
+    // The ingested data is real usable state — scan_authorization_risks
+    // runs against it without error (findings themselves are incidental;
+    // two lines is far too little volume to trip anything).
+    const scan = await tools.scanAuthorizationRisks({}, ctx);
+    expect(scan.ok).toBe(true);
+  });
+
+  it('ingest_access_logs with source combined-log-format and no rawText returns INVALID_INPUT', async () => {
+    const tools = await buildTools();
+    const ctx = createMockContext();
+    const result = await tools.ingestAccessLogs({ source: 'combined-log-format' }, ctx);
+    expect(result).toMatchObject({ ok: false, code: 'INVALID_INPUT' });
+  });
 });

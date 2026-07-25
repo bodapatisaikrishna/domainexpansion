@@ -2,7 +2,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { ToolDecorator as Tool, Widget, ExecutionContext, Injectable, z } from '@nitrostack/core';
 import type { AccessLogRecord, ToolResult, Severity } from '../../engine/types.js';
-import { runDetection, aggregateEndpoints, buildTopology, parseOpenApiTemplates, neutralise, exportReconstructedSpec, generateAuthzTestSuite } from '../../engine/index.js';
+import { runDetection, aggregateEndpoints, buildTopology, parseOpenApiTemplates, neutralise, exportReconstructedSpec, generateAuthzTestSuite, parseCombinedLogFormat } from '../../engine/index.js';
 import { listProviders, listServices, fetchSpec } from '../../integrations/apisguru.js';
 import { SurfaceStateService } from './state.js';
 import { toYaml } from './yaml.js';
@@ -34,9 +34,11 @@ const AccessLogRecordSchema = z.object({
 });
 
 const IngestAccessLogsSchema = z.object({
-  source: z.enum(['fixture', 'inline']),
+  source: z.enum(['fixture', 'inline', 'combined-log-format']),
   fixtureId: z.string().optional(),
   records: z.array(z.unknown()).optional(),
+  // Apache/nginx Combined or Common Log Format text, one request per line.
+  rawText: z.string().optional(),
 });
 
 const ImportOpenApiSpecSchema = z.object({
@@ -82,12 +84,16 @@ export class SurfaceTools {
   @Tool({
     name: 'ingest_access_logs',
     description:
-      'Loads access-log records into the in-memory store, either from a bundled fixture (fixtureId "acme-prod") ' +
-      'or from an inline array of records. This MUST be called before any analysis tool ' +
-      '(get_api_topology, list_shadow_endpoints, scan_authorization_risks, get_finding_evidence, ' +
-      'export_reconstructed_spec, generate_authz_test_suite) — those return NO_LOGS_INGESTED until this runs. ' +
-      'Inline ingestion is capped at 50,000 records; malformed records are rejected individually and reported, ' +
-      'not treated as a fatal error for the whole batch.',
+      'Loads access-log records into the in-memory store, from a bundled fixture (fixtureId "acme-prod"), an ' +
+      'inline array of AccessLogRecord objects, or real-world Apache/nginx Combined or Common Log Format text ' +
+      '(source "combined-log-format", one request per line in rawText) — the standard format most web servers ' +
+      'and reverse proxies can emit. This MUST be called before any analysis tool (get_api_topology, ' +
+      'list_shadow_endpoints, scan_authorization_risks, get_finding_evidence, export_reconstructed_spec, ' +
+      'generate_authz_test_suite) — those return NO_LOGS_INGESTED until this runs. Malformed lines/records are ' +
+      'rejected individually and reported, not treated as a fatal error for the whole batch. Note: Combined/Common ' +
+      'Log Format has no latency field (latencyMs will read 0) and no structured actor.role; actor.sub only ' +
+      'populates when the source server logged an authenticated user (rare unless HTTP Basic Auth or an auth-proxy ' +
+      'module was configured) — R1_CROSS_ACTOR and R2_ENUMERATION legitimately find nothing without it.',
     inputSchema: IngestAccessLogsSchema,
     examples: {
       request: { source: 'fixture', fixtureId: 'acme-prod' },
@@ -99,35 +105,55 @@ export class SurfaceTools {
     input: z.infer<typeof IngestAccessLogsSchema>,
     ctx: ExecutionContext,
   ): Promise<ToolResult<{ counts: number; timeRange: { from: string; to: string }; distinctActors: number; templatesDiscovered: number; rejected: { count: number; reasons: string[] } }>> {
-    let rawRecords: unknown[];
+    let valid: AccessLogRecord[];
+    let rejectedCount: number;
+    let rejectReasons: string[];
 
-    if (input.source === 'fixture') {
-      const fixtureId = input.fixtureId ?? 'acme-prod';
-      const path = join(FIXTURES_LOG_DIR, `${fixtureId}.jsonl`);
-      if (!existsSync(path)) {
-        return { ok: false, code: 'FIXTURE_NOT_FOUND', message: `No log fixture named "${fixtureId}".`, nextAction: "use fixtureId 'acme-prod', the only bundled log fixture" };
+    if (input.source === 'combined-log-format') {
+      if (!input.rawText) {
+        return { ok: false, code: 'INVALID_INPUT', message: 'source "combined-log-format" requires "rawText" (one Apache/nginx Combined or Common Log Format request per line).', nextAction: 'retry with rawText: string' };
       }
-      const text = readFileSync(path, 'utf-8').trim();
-      rawRecords = text.length > 0 ? text.split('\n').map((line) => JSON.parse(line)) : [];
+      if (input.rawText.length > MAX_INLINE_RECORDS * 200) {
+        return { ok: false, code: 'PAYLOAD_TOO_LARGE', message: 'rawText is too large to ingest inline.', nextAction: 'split the log file into smaller chunks' };
+      }
+      const parsed = parseCombinedLogFormat(input.rawText);
+      valid = parsed.records;
+      rejectedCount = parsed.rejected.count;
+      rejectReasons = parsed.rejected.reasons;
     } else {
-      if (!input.records) {
-        return { ok: false, code: 'INVALID_INPUT', message: 'source "inline" requires a non-empty "records" array.', nextAction: 'retry with records: AccessLogRecord[]' };
-      }
-      if (input.records.length > MAX_INLINE_RECORDS) {
-        return { ok: false, code: 'PAYLOAD_TOO_LARGE', message: `${input.records.length} records exceeds the ${MAX_INLINE_RECORDS} inline limit.`, nextAction: 'split the payload into batches of 50,000 or fewer records' };
-      }
-      rawRecords = input.records;
-    }
+      let rawRecords: unknown[];
 
-    const valid: AccessLogRecord[] = [];
-    const rejectReasons: string[] = [];
-    for (const raw of rawRecords) {
-      const parsed = AccessLogRecordSchema.safeParse(raw);
-      if (parsed.success) {
-        valid.push(parsed.data as AccessLogRecord);
+      if (input.source === 'fixture') {
+        const fixtureId = input.fixtureId ?? 'acme-prod';
+        const path = join(FIXTURES_LOG_DIR, `${fixtureId}.jsonl`);
+        if (!existsSync(path)) {
+          return { ok: false, code: 'FIXTURE_NOT_FOUND', message: `No log fixture named "${fixtureId}".`, nextAction: "use fixtureId 'acme-prod', the only bundled log fixture" };
+        }
+        const text = readFileSync(path, 'utf-8').trim();
+        rawRecords = text.length > 0 ? text.split('\n').map((line) => JSON.parse(line)) : [];
       } else {
-        if (rejectReasons.length < 3) rejectReasons.push(parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
+        if (!input.records) {
+          return { ok: false, code: 'INVALID_INPUT', message: 'source "inline" requires a non-empty "records" array.', nextAction: 'retry with records: AccessLogRecord[]' };
+        }
+        if (input.records.length > MAX_INLINE_RECORDS) {
+          return { ok: false, code: 'PAYLOAD_TOO_LARGE', message: `${input.records.length} records exceeds the ${MAX_INLINE_RECORDS} inline limit.`, nextAction: 'split the payload into batches of 50,000 or fewer records' };
+        }
+        rawRecords = input.records;
       }
+
+      const parsedValid: AccessLogRecord[] = [];
+      const reasons: string[] = [];
+      for (const raw of rawRecords) {
+        const parsed = AccessLogRecordSchema.safeParse(raw);
+        if (parsed.success) {
+          parsedValid.push(parsed.data as AccessLogRecord);
+        } else {
+          if (reasons.length < 3) reasons.push(parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
+        }
+      }
+      valid = parsedValid;
+      rejectedCount = rawRecords.length - parsedValid.length;
+      rejectReasons = reasons;
     }
 
     this.state.ingestRecords(valid);
@@ -140,7 +166,7 @@ export class SurfaceTools {
       if (to === '' || r.ts > to) to = r.ts;
     }
 
-    ctx.logger.info('Ingested access logs', { count: valid.length, rejected: rawRecords.length - valid.length });
+    ctx.logger.info('Ingested access logs', { count: valid.length, rejected: rejectedCount, source: input.source });
 
     return {
       ok: true,
@@ -149,7 +175,7 @@ export class SurfaceTools {
         timeRange: { from, to },
         distinctActors,
         templatesDiscovered: templates.length,
-        rejected: { count: rawRecords.length - valid.length, reasons: rejectReasons },
+        rejected: { count: rejectedCount, reasons: rejectReasons },
       },
       suggestedNext: [
         { tool: 'browse_spec_registry', args: {}, why: 'discover a real published API contract from the APIs.guru registry to compare against' },

@@ -77,6 +77,7 @@ src/
 │   ├── topology.ts        aggregateEndpoints, buildTopology
 │   ├── spec.ts            parseOpenApiTemplates, diffSpec (position-based matching)
 │   ├── sanitise.ts        neutralise(), detectInjectionAttempt()
+│   ├── adapters/          real-world log format -> AccessLogRecord (Combined/Common Log Format)
 │   ├── rules/             R1–R7, one file each, shared DetectionContext
 │   ├── score.ts           scoreFindings — exposure/sensitivity multipliers, R5 escalation
 │   ├── artifacts.ts       exportReconstructedSpec, generateAuthzTestSuite
@@ -149,7 +150,7 @@ Copy-pasteable agent prompts, in order:
 
 **Access logs cannot prove an authorization violation.** This tool surfaces prioritised, evidence-backed *leads* — patterns strongly correlated with real BOLA/shadow-API/log-injection incidents — not confirmed breaches. A human (or the owning team, via `generate_authz_test_suite`) still has to verify against the actual service.
 
-**Requires an authenticated-subject field in the log schema.** `AccessLogRecord.actor.sub` is what `R1`/`R2` key off of; a log format without a stable per-request principal identifier can't be analysed by those two rules (they'd simply never fire, not silently mis-fire).
+**Requires an authenticated-subject field in the log schema.** `AccessLogRecord.actor.sub` is what `R1`/`R2` key off of; a log format without a stable per-request principal identifier can't be analysed by those two rules (they'd simply never fire, not silently mis-fire). `ingest_access_logs` accepts real Apache/nginx Combined/Common Log Format text directly (`source: 'combined-log-format'`, one request per line in `rawText`) via `src/engine/adapters/combined-log-format.ts` — but that format has no latency field (`latencyMs` reads 0 for adapter-derived records) and only carries `actor.sub` when the source server was configured to log an authenticated user (HTTP Basic Auth or an auth-proxy module), which most real deployments don't do by default.
 
 **`R5_SHADOW`'s no-spec heuristic is exactly that — a heuristic.** It flags known internal/debug/legacy path prefixes and low-traffic endpoints with no OPTIONS/HEAD support. With a real spec imported, shadow classification is exact (position-based diff, not the heuristic).
 
