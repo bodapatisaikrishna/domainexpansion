@@ -23,17 +23,19 @@ The detection logic lives entirely in `src/engine/**` — pure functions over pl
 
 The agentic part sits above that boundary: an LLM client (via `audit_brief`, `remediation_plan`, `incident_handoff`) reasons about *what to do* with the findings — who probably owns the affected service, what to prioritise, how to phrase a ticket — using only the engine's already-computed, already-safe output. The engine decides facts; the agent decides communication and next steps. Neither one does the other's job.
 
-## The five detection rules
+## The seven detection rules
 
 | Rule | CWE | Trigger |
 |---|---|---|
 | `R1_CROSS_ACTOR` | [CWE-639](https://cwe.mitre.org/data/definitions/639.html) Authorization Bypass Through User-Controlled Key | For a path-param position, ≥2 distinct non-admin/service accounts both received a 2xx on the *same* concrete object value |
 | `R2_ENUMERATION` | [CWE-799](https://cwe.mitre.org/data/definitions/799.html) Improper Control of Interaction Frequency | One account touches ≥20 distinct values at the template's most specific param position inside any 120-second sliding window |
 | `R3_AUTH_GAP` | [CWE-306](https://cwe.mitre.org/data/definitions/306.html) Missing Authentication for Critical Function | A template with ≥200 requests has **zero** 401/403 responses ever, while at least one sibling template at the same path depth correctly denies unauthorized access |
+| `R4_EXISTENCE_ORACLE` | [CWE-204](https://cwe.mitre.org/data/definitions/204.html) Observable Response Discrepancy | Same param position returns 401 for some concrete object IDs and 404 for others — existence is observable to an unauthenticated caller |
 | `R5_SHADOW` | [CWE-1059](https://cwe.mitre.org/data/definitions/1059.html) Insufficient Documentation | Observed template is absent from the imported spec (position-based match — see below); without a spec, falls back to a path-prefix/traffic-percentile heuristic |
+| `R6_UNGUARDED_WRITE` | [CWE-285](https://cwe.mitre.org/data/definitions/285.html) Improper Authorization | A mutating (POST/PUT/PATCH/DELETE) endpoint with ≥10 write requests has zero 401/403 denials, while a sibling template at the same path depth does deny |
 | `R7_LOG_INJECTION` | [CWE-117](https://cwe.mitre.org/data/definitions/117.html) Improper Output Neutralization for Logs | Path/query/User-Agent contains instruction-shaped text aimed at an automated log-analysis agent |
 
-Two more rules (`R4_EXISTENCE_ORACLE`, `R6_UNGUARDED_WRITE`) are declared in the type system and have fixture data planted for them, but are **not implemented** — the build prioritised the MCP surface (25% of the rubric) over a sixth detection heuristic, per this project's own working agreement.
+All seven rules declared in the type system are implemented.
 
 Full algorithms, the scoring formula, and the false-positive controls are in [docs/DETECTION.md](docs/DETECTION.md).
 
@@ -75,7 +77,7 @@ src/
 │   ├── topology.ts        aggregateEndpoints, buildTopology
 │   ├── spec.ts            parseOpenApiTemplates, diffSpec (position-based matching)
 │   ├── sanitise.ts        neutralise(), detectInjectionAttempt()
-│   ├── rules/             R1, R2, R3, R5, R7 — one file each, shared DetectionContext
+│   ├── rules/             R1–R7, one file each, shared DetectionContext
 │   ├── score.ts           scoreFindings — exposure/sensitivity multipliers, R5 escalation
 │   ├── artifacts.ts       exportReconstructedSpec, generateAuthzTestSuite
 │   └── index.ts           runDetection — the engine's single entry point
@@ -138,8 +140,8 @@ Copy-pasteable agent prompts, in order:
 | 4 | Three prompt-injection variants (plain phrase, zero-width-split word, `system:` role injection) | `R7_LOG_INJECTION`, HIGH+ |
 | 5 | `GET /api/v1/admin/feature-flags` — documented, role-gated correctly | **CONTROL — must not be flagged** |
 | 6 | `POST /api/v1/auth/login` — documented, high 401 volume from many IPs (normal failed logins) | **CONTROL — must not be flagged** |
-| 7 | `GET /api/v1/invoices/{invoiceId}` — 404 for nonexistent IDs, 401 for existing IDs | Data for `R4_EXISTENCE_ORACLE` (not implemented) |
-| 8 | `DELETE /api/v1/webhooks/{hookId}` — 31 deletes, all 204, zero 4xx | Data for `R6_UNGUARDED_WRITE` (not implemented) |
+| 7 | `GET /api/v1/invoices/{invoiceId}` — 404 for nonexistent IDs, 401 for existing IDs | `R4_EXISTENCE_ORACLE`, MEDIUM+ |
+| 8 | `DELETE /api/v1/webhooks/{hookId}` — 31 deletes, all 204, zero 4xx | `R6_UNGUARDED_WRITE`, MEDIUM+ |
 
 34 endpoint templates observed, 27 documented, 7 shadow.
 
@@ -148,8 +150,6 @@ Copy-pasteable agent prompts, in order:
 **Access logs cannot prove an authorization violation.** This tool surfaces prioritised, evidence-backed *leads* — patterns strongly correlated with real BOLA/shadow-API/log-injection incidents — not confirmed breaches. A human (or the owning team, via `generate_authz_test_suite`) still has to verify against the actual service.
 
 **Requires an authenticated-subject field in the log schema.** `AccessLogRecord.actor.sub` is what `R1`/`R2` key off of; a log format without a stable per-request principal identifier can't be analysed by those two rules (they'd simply never fire, not silently mis-fire).
-
-**R4 and R6 are unimplemented.** Fixture data for both exists (see the sample-dataset table above); the rules themselves were deprioritised in favour of the MCP surface.
 
 **`R5_SHADOW`'s no-spec heuristic is exactly that — a heuristic.** It flags known internal/debug/legacy path prefixes and low-traffic endpoints with no OPTIONS/HEAD support. With a real spec imported, shadow classification is exact (position-based diff, not the heuristic).
 

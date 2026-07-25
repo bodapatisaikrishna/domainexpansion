@@ -426,7 +426,7 @@ function genListTraffic(opts: {
   }
 }
 
-// --- Condition 7: GET /api/v1/invoices/{invoiceId} -> R4 data (unused) ----
+// --- Condition 7: GET /api/v1/invoices/{invoiceId} -> R4_EXISTENCE_ORACLE ---
 {
   // 10 "existing" ids -> 401 (auth required, existence leaked); 10
   // "nonexistent" ids -> 404. Unauthenticated throughout.
@@ -446,7 +446,7 @@ function genListTraffic(opts: {
   }
 }
 
-// --- Condition 8: DELETE /api/v1/webhooks/{hookId} -> R6 data (unused) ----
+// --- Condition 8: DELETE /api/v1/webhooks/{hookId} -> R6_UNGUARDED_WRITE ---
 {
   const hookIds = Array.from({ length: 15 }, (_, i) => 5000 + i);
   for (let i = 0; i < 31; i++) {
@@ -609,10 +609,8 @@ const groundTruth = {
     { template: '/internal/v0/export/customers', rule: 'R5_SHADOW', minSeverity: 'HIGH' },
     { template: '/api/v1/users/{userId}/documents/{docId}', rule: 'R2_ENUMERATION', minSeverity: 'HIGH' },
     { template: '/api/v1/orders/{orderId}', rule: 'R7_LOG_INJECTION', minSeverity: 'HIGH' },
-  ],
-  optionalFindings: [
-    { template: '/api/v1/invoices/{invoiceId}', rule: 'R4_EXISTENCE_ORACLE' },
-    { template: '/api/v1/webhooks/{hookId}', rule: 'R6_UNGUARDED_WRITE' },
+    { template: '/api/v1/invoices/{invoiceId}', rule: 'R4_EXISTENCE_ORACLE', minSeverity: 'MEDIUM' },
+    { template: '/api/v1/webhooks/{hookId}', rule: 'R6_UNGUARDED_WRITE', minSeverity: 'MEDIUM' },
   ],
   mustNotFlag: ['/api/v1/admin/feature-flags', '/api/v1/auth/login'],
 };

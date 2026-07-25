@@ -350,8 +350,12 @@ exports[`exportReconstructedSpec > is deterministic across repeated calls (snaps
         "x-domainexpansion": {
           "distinctActors": 0,
           "documented": true,
-          "evidenceUris": [],
-          "findingIds": [],
+          "evidenceUris": [
+            "evidence://finding/r4_existence_oracle_a278d6c8fb3e",
+          ],
+          "findingIds": [
+            "r4_existence_oracle_a278d6c8fb3e",
+          ],
           "firstSeen": "2026-07-24T12:02:55.352Z",
           "lastSeen": "2026-07-24T17:56:41.157Z",
           "observedRequestCount": 47,
@@ -854,8 +858,12 @@ exports[`exportReconstructedSpec > is deterministic across repeated calls (snaps
         "x-domainexpansion": {
           "distinctActors": 2,
           "documented": true,
-          "evidenceUris": [],
-          "findingIds": [],
+          "evidenceUris": [
+            "evidence://finding/r6_unguarded_write_cb8b14a3c301",
+          ],
+          "findingIds": [
+            "r6_unguarded_write_cb8b14a3c301",
+          ],
           "firstSeen": "2026-07-24T12:03:05.064Z",
           "lastSeen": "2026-07-24T17:57:04.183Z",
           "observedRequestCount": 31,

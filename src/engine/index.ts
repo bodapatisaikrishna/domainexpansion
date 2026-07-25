@@ -12,7 +12,9 @@ import {
   detectR1CrossActor,
   detectR2Enumeration,
   detectR3AuthGap,
+  detectR4ExistenceOracle,
   detectR5Shadow,
+  detectR6UnguardedWrite,
   detectR7LogInjection,
 } from './rules/index.js';
 import { scoreFindings } from './score.js';
@@ -38,7 +40,9 @@ export function runDetection(
     ...detectR1CrossActor(ctx),
     ...detectR2Enumeration(ctx),
     ...detectR3AuthGap(ctx),
+    ...detectR4ExistenceOracle(ctx),
     ...detectR5Shadow(ctx),
+    ...detectR6UnguardedWrite(ctx),
     ...detectR7LogInjection(ctx),
   ];
 

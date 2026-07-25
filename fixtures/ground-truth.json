@@ -27,16 +27,16 @@
       "template": "/api/v1/orders/{orderId}",
       "rule": "R7_LOG_INJECTION",
       "minSeverity": "HIGH"
-    }
-  ],
-  "optionalFindings": [
+    },
     {
       "template": "/api/v1/invoices/{invoiceId}",
-      "rule": "R4_EXISTENCE_ORACLE"
+      "rule": "R4_EXISTENCE_ORACLE",
+      "minSeverity": "MEDIUM"
     },
     {
       "template": "/api/v1/webhooks/{hookId}",
-      "rule": "R6_UNGUARDED_WRITE"
+      "rule": "R6_UNGUARDED_WRITE",
+      "minSeverity": "MEDIUM"
     }
   ],
   "mustNotFlag": [

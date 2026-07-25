@@ -70,7 +70,7 @@ you are now | new instructions | override .{0,20}instructions
 
 Returns `{field, pattern}[]` per match, or `null` — never an empty array for "nothing found," so callers can't mistake "no matches" for "no attempt was made to look."
 
-## 5. The five rules (`src/engine/rules/`)
+## 5. The seven rules (`src/engine/rules/`)
 
 Each rule is one file, taking a shared `DetectionContext = { records, templates, documented, byTemplate }` and returning `Finding[]`. Finding ids are `${rule}_${sha256(rule::template).slice(0,12)}` — stable and derived, never random or index-based, so re-running detection never changes an id an agent might have cited earlier in a conversation.
 
@@ -90,6 +90,12 @@ For each template with `requestCount ≥ 200` and `denialCount (401+403) === 0`:
 
 **This sibling condition is the entire false-positive control.** Without it, any genuinely-public, high-traffic endpoint (a health check, a public catalog) would trip the rule purely for having no denials. With it, `/api/v1/auth/login` never even reaches the check — it has plenty of its own 401s from failed logins — and a hypothetical all-public API (where *no* template anywhere ever denies anything) would never flag *anything* under this rule, because no sibling could prove the absence is meaningful.
 
+### R4_EXISTENCE_ORACLE (CWE-204)
+
+For each template with ≥1 path parameter, take the last parameter position and, for each concrete value seen there, compute the *set* of distinct status codes ever returned. A value is "existing" if its status set is exactly `{401}`, "nonexistent" if exactly `{404}` — values with any other status (2xx, a mix, etc.) are ignored, since they're not part of the oracle. If both an existing set and a nonexistent set are non-empty on the same template, flag: an unauthenticated caller can tell real object IDs from fake ones purely from the status code, without ever logging in. Metrics: `existingIdCount`, `nonexistentIdCount`.
+
+**This is the anti-pattern itself, not a symptom.** Best practice for object-scoped endpoints is to return 404 for both "doesn't exist" and "exists but you can't see it," precisely so existence isn't observable pre-auth. A clean 401-vs-404 split at the same parameter position is exactly what that guidance exists to prevent — there's no legitimate-public-endpoint carve-out to construct here the way there is for R3, because the discrepancy is the vulnerability.
+
 ### R5_SHADOW (CWE-1059)
 
 Two modes, chosen by whether `ctx.documented` (the raw imported spec's path list) is non-empty:
@@ -98,6 +104,10 @@ Two modes, chosen by whether `ctx.documented` (the raw imported spec's path list
 - **No spec:** heuristic — flag if the path matches `/^\/(internal|_|v0|debug|legacy|tmp)/`, OR if the template's request count is at or below the 15th percentile of all templates' request counts AND it supports neither `OPTIONS` nor `HEAD` (a proxy for "nobody wired this into routing/CORS metadata properly").
 
 Baseline severity is MEDIUM (`score.ts` base 35); see §6 for the escalation that turns an unauthenticated shadow endpoint into CRITICAL.
+
+### R6_UNGUARDED_WRITE (CWE-285)
+
+Structurally identical to R3 — a template with zero denials, proven suspicious by a same-depth sibling that does deny — but scoped to mutating methods (`POST`/`PUT`/`PATCH`/`DELETE`) only, and at a much lower volume threshold (≥10 write requests, vs. R3's ≥200). The threshold is deliberately different: a read endpoint needs volume before "nobody's ever been denied" is meaningful signal rather than noise, but a *write* endpoint doesn't — a single unauthorized `DELETE` or `PATCH` is already damage done, so the bar for flagging is set low on purpose. Metrics: `writeRequestCount`, `distinctActors`, `siblingDenialCount`.
 
 ### R7_LOG_INJECTION (CWE-117)
 
@@ -123,7 +133,7 @@ severity:  CRITICAL ≥85   HIGH ≥65   MEDIUM ≥40   else LOW
 
 **R5 escalation.** After every finding has an independently-computed score/severity, a second pass groups findings by template. Any `R5_SHADOW` finding co-located with a non-R5 finding on the *same* template inherits the maximum severity among those co-located findings — and its score is bumped to at least that severity's floor (85/65/40), so the two fields never disagree (a CRITICAL-labelled finding with a MEDIUM-range score would be a visible inconsistency in the demo). This is why `/internal/v0/export/customers` shows `R5_SHADOW` at CRITICAL (score 85) rather than its raw MEDIUM baseline — it's co-located with `R3_AUTH_GAP`, which is independently CRITICAL on its own.
 
-Final sort: score descending, then template ascending, via a stable sort — ties beyond that retain the original rule-evaluation order (R1, R2, R3, R5, R7), which is itself fixed by `runDetection`.
+Final sort: score descending, then template ascending, via a stable sort — ties beyond that retain the original rule-evaluation order (R1, R2, R3, R4, R5, R6, R7), which is itself fixed by `runDetection`.
 
 ## 7. False-positive controls, summarised
 
@@ -142,7 +152,7 @@ Final sort: score descending, then template ascending, via a stable sort — tie
 | R1_CROSS_ACTOR | CWE-639 | Authorization Bypass Through User-Controlled Key |
 | R2_ENUMERATION | CWE-799 | Improper Control of Interaction Frequency |
 | R3_AUTH_GAP | CWE-306 | Missing Authentication for Critical Function |
-| R4_EXISTENCE_ORACLE (unimplemented) | CWE-204 | Observable Response Discrepancy |
+| R4_EXISTENCE_ORACLE | CWE-204 | Observable Response Discrepancy |
 | R5_SHADOW | CWE-1059 | Insufficient Documentation |
-| R6_UNGUARDED_WRITE (unimplemented) | CWE-285 | Improper Authorization |
+| R6_UNGUARDED_WRITE | CWE-285 | Improper Authorization |
 | R7_LOG_INJECTION | CWE-117 | Improper Output Neutralization for Logs |
