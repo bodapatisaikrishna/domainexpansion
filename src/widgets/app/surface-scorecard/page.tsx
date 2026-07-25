@@ -20,8 +20,17 @@ type ScanResult = { ok: true; data: { severity: string }[] } | { ok: false; mess
 // Explicit tri-state: a failed background call must never render identically
 // to a real "0 findings" — a security scorecard silently showing a false
 // all-clear on a network/tool error is a false-negative risk, not a
-// cosmetic bug. 'loading' -> number (real result) or 'error' (never 0).
-type CountState = 'loading' | 'error' | number;
+// cosmetic bug. 'loading' -> number (real result) or { error } (never 0).
+// The error carries the ACTUAL reason (a real ok:false message, a JSON
+// parse failure, or a thrown exception) rather than a generic "call
+// failed" — those are different problems (state/session mismatch vs.
+// network vs. malformed response) and collapsing them into one message
+// hides exactly the information needed to tell which one happened.
+type CountState = 'loading' | { error: string } | number;
+
+function describeCallFailure(e: unknown): string {
+  return e instanceof Error ? e.message : 'call threw a non-Error value';
+}
 
 export default function SurfaceScorecardWidget() {
   const { isReady, getToolOutput, callTool } = useWidgetSDK();
@@ -41,18 +50,30 @@ export default function SurfaceScorecardWidget() {
     callTool('list_shadow_endpoints', {})
       .then((res) => {
         if (cancelled) return;
-        const parsed: ShadowResult = JSON.parse(res.result);
-        setShadowCount(parsed.ok ? parsed.data.shadow.length : 'error');
+        let parsed: ShadowResult;
+        try {
+          parsed = JSON.parse(res.result);
+        } catch {
+          setShadowCount({ error: `malformed response: ${res.result.slice(0, 80)}` });
+          return;
+        }
+        setShadowCount(parsed.ok ? parsed.data.shadow.length : { error: parsed.message });
       })
-      .catch(() => !cancelled && setShadowCount('error'));
+      .catch((e) => !cancelled && setShadowCount({ error: describeCallFailure(e) }));
 
     callTool('scan_authorization_risks', { minSeverity: 'CRITICAL' })
       .then((res) => {
         if (cancelled) return;
-        const parsed: ScanResult = JSON.parse(res.result);
-        setCriticalCount(parsed.ok ? parsed.data.length : 'error');
+        let parsed: ScanResult;
+        try {
+          parsed = JSON.parse(res.result);
+        } catch {
+          setCriticalCount({ error: `malformed response: ${res.result.slice(0, 80)}` });
+          return;
+        }
+        setCriticalCount(parsed.ok ? parsed.data.length : { error: parsed.message });
       })
-      .catch(() => !cancelled && setCriticalCount('error'));
+      .catch((e) => !cancelled && setCriticalCount({ error: describeCallFailure(e) }));
 
     return () => {
       cancelled = true;
@@ -65,11 +86,12 @@ export default function SurfaceScorecardWidget() {
 
   const { data } = result;
 
-  // Renders 'loading' as '…', a real number as itself, and 'error' as a
-  // visibly-broken '!' with a red border and caption — never as 0.
+  // Renders 'loading' as '…', a real number as itself, and a failure as a
+  // visibly-broken '!' with a red border and the ACTUAL reason as caption —
+  // never silently as 0.
   function countProps(state: CountState, accent: string): { value: string | number; accent: string; caption?: string; captionColor?: string } {
     if (state === 'loading') return { value: '…', accent };
-    if (state === 'error') return { value: '!', accent: palette.severity.HIGH, caption: 'call failed — not a real 0', captionColor: palette.severity.HIGH };
+    if (typeof state === 'object') return { value: '!', accent: palette.severity.HIGH, caption: state.error, captionColor: palette.severity.HIGH };
     return { value: state, accent };
   }
 
