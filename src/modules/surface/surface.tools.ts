@@ -95,7 +95,10 @@ export class SurfaceTools {
       'and only carries actor.sub when the source server logged an authenticated user (rare unless HTTP Basic Auth ' +
       'or an auth-proxy module was configured); AWS ALB logs have real latency data but actor.sub/role are always ' +
       'null (an ALB has no concept of an application-level authenticated user at all). Either way, ' +
-      'R1_CROSS_ACTOR and R2_ENUMERATION legitimately find nothing when actor.sub is never populated.',
+      'R1_CROSS_ACTOR and R2_ENUMERATION legitimately find nothing when actor.sub is never populated. If the user ' +
+      'asks to find issues/risks right after loading logs, call scan_authorization_risks immediately — no spec ' +
+      'import is required first, most rules work on logs alone; importing a spec only sharpens shadow-endpoint ' +
+      'detection and can happen later or not at all.',
     inputSchema: IngestAccessLogsSchema,
     examples: {
       request: { source: 'fixture', fixtureId: 'acme-prod' },
@@ -180,8 +183,9 @@ export class SurfaceTools {
         rejected: { count: rejectedCount, reasons: rejectReasons },
       },
       suggestedNext: [
+        { tool: 'scan_authorization_risks', args: {}, why: 'find authorization risks now — no spec is required for this, R1/R2/R3/R7 all work on logs alone' },
+        { tool: 'import_openapi_spec', args: { source: 'fixture', fixtureId: 'acme-openapi' }, why: 'import the bundled OpenAPI spec first for more precise shadow-endpoint detection (optional, not required to scan)' },
         { tool: 'browse_spec_registry', args: {}, why: 'discover a real published API contract from the APIs.guru registry to compare against' },
-        { tool: 'import_openapi_spec', args: { source: 'fixture', fixtureId: 'acme-openapi' }, why: 'import the bundled OpenAPI spec to find shadow (undocumented) endpoints' },
       ],
     };
   }
