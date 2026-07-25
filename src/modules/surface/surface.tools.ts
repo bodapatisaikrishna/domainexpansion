@@ -191,7 +191,10 @@ export class SurfaceTools {
     description:
       'Imports an OpenAPI 2.0/3.x spec (fixtureId "acme-openapi", or inline as the raw parsed document) and uses it ' +
       'to classify observed endpoints as documented vs shadow. Matching is by path shape and parameter POSITION, ' +
-      'never by parameter name, so a spec naming {order_id} against our own {orderId} still matches correctly.',
+      'never by parameter name, so a spec naming {order_id} against our own {orderId} still matches correctly. ' +
+      'If the user asks to import "our"/"the" spec without naming a source and gives no inline content, just call ' +
+      'this with { source: "fixture" } — fixtureId defaults to "acme-openapi" automatically, the only bundled spec ' +
+      '— no need to ask which one first.',
     inputSchema: ImportOpenApiSpecSchema,
     examples: {
       request: { source: 'fixture', fixtureId: 'acme-openapi' },
