@@ -8,7 +8,9 @@ Verified live via a real MCP JSON-RPC handshake (`initialize` → `tools/list`) 
 
 # DomainExpansion.ai
 
-A NitroStack MCP application that reconstructs an enterprise's real API attack surface from access logs, diffs it against a published OpenAPI contract to find shadow endpoints, and reports broken-object-level-authorization (BOLA) risk with the triggering log records attached as citable evidence.
+**Your API's real attack surface isn't what's in the spec. It's what's in the logs.**
+
+Point this at production access logs and it hands back a ranked list of real BOLA and shadow-API risks — each one backed by the exact log line that proves it, not a guess. No log line ever reaches an LLM without being neutralised first, so a payload trying to prompt-inject the agent reading the report shows up as a finding, not as a successful attack. Built as a NitroStack MCP application: an agent drives the whole investigation — ingest, diff against the spec, scan, cite evidence, generate a fix-verifying test — through tool calls, never raw log dumps.
 
 ## The problem
 
