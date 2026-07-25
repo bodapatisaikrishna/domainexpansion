@@ -161,4 +161,26 @@ describe('MCP surface: SurfaceTools', () => {
     const result = await tools.ingestAccessLogs({ source: 'aws-alb' }, ctx);
     expect(result).toMatchObject({ ok: false, code: 'INVALID_INPUT' });
   });
+
+  it('import_registry_spec reports logsIngested:false and routes suggestedNext to ingest_access_logs when nothing is ingested yet', async () => {
+    const tools = await buildTools();
+    const ctx = createMockContext();
+    const result = await tools.importRegistrySpec({ provider: 'stripe.com' }, ctx);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.data.logsIngested).toBe(false);
+    expect(result.data.title).toBe('Stripe API');
+    expect(result.suggestedNext?.[0]).toMatchObject({ tool: 'ingest_access_logs' });
+  });
+
+  it('import_registry_spec reports logsIngested:true and routes suggestedNext to get_api_topology once logs exist', async () => {
+    const tools = await buildTools();
+    const ctx = createMockContext();
+    await tools.ingestAccessLogs({ source: 'fixture', fixtureId: 'acme-prod' }, ctx);
+    const result = await tools.importRegistrySpec({ provider: 'stripe.com' }, ctx);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.data.logsIngested).toBe(true);
+    expect(result.suggestedNext?.[0]).toMatchObject({ tool: 'get_api_topology' });
+  });
 });

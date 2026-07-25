@@ -276,14 +276,17 @@ export class SurfaceTools {
     description:
       'Fetches a real published OpenAPI spec from the APIs.guru registry (e.g. provider "stripe.com") and imports ' +
       'it the same way import_openapi_spec does, classifying observed endpoints as documented vs shadow against it. ' +
-      'Cache-first — works offline once warmed.',
+      'Cache-first — works offline once warmed. Works fine even if no logs are ingested yet: the response includes ' +
+      'logsIngested (boolean) so you can tell whether documentedCount is a real comparison or trivially 0 because ' +
+      'nothing has been ingested — no need to ask the user first, suggestedNext routes to ingest_access_logs ' +
+      'automatically when logs are missing.',
     inputSchema: ImportRegistrySpecSchema,
-    examples: { request: { provider: 'stripe.com' }, response: { title: 'Stripe API', documentedCount: 0, fromCache: true, degraded: false } },
+    examples: { request: { provider: 'stripe.com' }, response: { title: 'Stripe API', documentedCount: 0, fromCache: true, degraded: false, logsIngested: false } },
   })
   async importRegistrySpec(
     input: z.infer<typeof ImportRegistrySpecSchema>,
     ctx: ExecutionContext,
-  ): Promise<ToolResult<{ title: string; documentedCount: number; fromCache: boolean; degraded: boolean }>> {
+  ): Promise<ToolResult<{ title: string; documentedCount: number; fromCache: boolean; degraded: boolean; logsIngested: boolean }>> {
     const result = await fetchSpec(input.provider, input.service);
     if (result.degraded) {
       const detail = typeof result.data === 'object' && result.data !== null && 'error' in result.data ? String((result.data as { error: unknown }).error) : 'no cached or live copy available';
@@ -294,13 +297,21 @@ export class SurfaceTools {
     const rawSpecPaths = parseOpenApiTemplates(spec);
     this.state.setSpec(rawSpecPaths, `registry:${input.provider}/${input.service ?? ''}`);
     const { documentedTemplates } = this.state.computeDocumented();
+    const logsIngested = this.state.hasLogs();
 
     ctx.logger.info('Imported registry spec', { provider: input.provider, service: input.service, paths: rawSpecPaths.length });
 
     return {
       ok: true,
-      data: { title: spec.info?.title ?? input.provider, documentedCount: documentedTemplates.length, fromCache: result.fromCache, degraded: result.degraded },
-      suggestedNext: [{ tool: 'get_api_topology', args: {}, why: 'view documented/shadow status against this real-world contract' }],
+      data: { title: spec.info?.title ?? input.provider, documentedCount: documentedTemplates.length, fromCache: result.fromCache, degraded: result.degraded, logsIngested },
+      // logsIngested tells the caller directly whether documentedCount is a
+      // real comparison or trivially 0 because nothing's been ingested yet —
+      // no need to ask the user or guess; suggestedNext below routes
+      // accordingly instead of always pointing at a tool that would just
+      // return NO_LOGS_INGESTED.
+      suggestedNext: logsIngested
+        ? [{ tool: 'get_api_topology', args: {}, why: 'view documented/shadow status against this real-world contract' }]
+        : [{ tool: 'ingest_access_logs', args: { source: 'fixture', fixtureId: 'acme-prod' }, why: 'no logs are ingested yet — documentedCount above is 0 because there is nothing to compare against, not because the spec is empty' }],
     };
   }
 
