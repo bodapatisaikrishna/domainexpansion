@@ -147,7 +147,17 @@ export function buildTopology(
 
   const observedEndpoints = templates.length;
   const documentedEndpoints = templates.filter((t) => t.documented).length;
-  const shadowEndpoints = observedEndpoints - documentedEndpoints;
+  // Prefer R5_SHADOW's own finding set over the naive "not documented"
+  // count. With a spec imported these already agree exactly (R5's
+  // spec-mode branch IS `!t.documented`), but without one, R5 only flags a
+  // heuristic subset (internal/debug/legacy prefixes, low-traffic no-
+  // OPTIONS/HEAD endpoints) — the naive count previously called EVERY
+  // undocumented endpoint "shadow" even when R5 itself hadn't flagged it,
+  // which reads as two different numbers claiming to answer the same
+  // question. When findings aren't supplied, fall back to the naive count.
+  const shadowEndpoints = findings
+    ? new Set(findings.filter((f) => f.rule === 'R5_SHADOW').map((f) => f.template)).size
+    : observedEndpoints - documentedEndpoints;
   const distinctActors = new Set(records.map((r) => r.actor.sub).filter((s): s is string => s !== null)).size;
 
   let from = '';

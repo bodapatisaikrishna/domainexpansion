@@ -113,6 +113,25 @@ describe('buildTopology', () => {
     expect(a).toEqual(b);
   });
 
+  it('stats.shadowEndpoints matches R5_SHADOW\'s own finding set when findings are supplied, not a naive "undocumented" count', () => {
+    // No spec imported (documentedTemplates: []) -> aggregateEndpoints marks
+    // every template undocumented. Simulate R5's heuristic mode flagging
+    // only ONE of two undocumented templates as an actual shadow finding —
+    // stats.shadowEndpoints must report 1, not 2, once findings are given.
+    const records: AccessLogRecord[] = [
+      rec({ id: 'L1', path: '/internal/v1/metrics', actor: { sub: null, role: null } }),
+      rec({ id: 'L2', path: '/api/v1/products/1', actor: { sub: null, role: null } }),
+    ];
+    const findings: Finding[] = [
+      { id: 'f1', rule: 'R5_SHADOW', cwe: 'CWE-1059', cweTitle: 'x', template: '/internal/v1/metrics', methods: ['GET'], severity: 'MEDIUM', score: 49, title: 't', rationale: 'r', evidence: ['L1'], evidenceUri: 'evidence://finding/f1', metrics: {}, documented: false },
+    ];
+    const noFindings = buildTopology(records, []);
+    expect(noFindings.stats.shadowEndpoints).toBe(2); // naive fallback: both undocumented
+
+    const withFindings = buildTopology(records, [], findings);
+    expect(withFindings.stats.shadowEndpoints).toBe(1); // matches R5's actual finding count
+  });
+
   it('handles a bare root-path ("/") request without throwing — regression for a crash found against real NASA-HTTP traffic', () => {
     const records: AccessLogRecord[] = [
       rec({ id: 'L1', path: '/', method: 'GET', status: 200 }),
