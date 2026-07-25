@@ -2,7 +2,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { ToolDecorator as Tool, Widget, ExecutionContext, Injectable, z } from '@nitrostack/core';
 import type { AccessLogRecord, ToolResult, Severity } from '../../engine/types.js';
-import { runDetection, aggregateEndpoints, buildTopology, parseOpenApiTemplates, neutralise, exportReconstructedSpec, generateAuthzTestSuite, parseCombinedLogFormat } from '../../engine/index.js';
+import { runDetection, aggregateEndpoints, buildTopology, parseOpenApiTemplates, neutralise, exportReconstructedSpec, generateAuthzTestSuite, parseCombinedLogFormat, parseAwsAlbLogFormat } from '../../engine/index.js';
 import { listProviders, listServices, fetchSpec } from '../../integrations/apisguru.js';
 import { SurfaceStateService } from './state.js';
 import { toYaml } from './yaml.js';
@@ -34,10 +34,10 @@ const AccessLogRecordSchema = z.object({
 });
 
 const IngestAccessLogsSchema = z.object({
-  source: z.enum(['fixture', 'inline', 'combined-log-format']),
+  source: z.enum(['fixture', 'inline', 'combined-log-format', 'aws-alb']),
   fixtureId: z.string().optional(),
   records: z.array(z.unknown()).optional(),
-  // Apache/nginx Combined or Common Log Format text, one request per line.
+  // For source 'combined-log-format' or 'aws-alb': one request per line.
   rawText: z.string().optional(),
 });
 
@@ -85,15 +85,17 @@ export class SurfaceTools {
     name: 'ingest_access_logs',
     description:
       'Loads access-log records into the in-memory store, from a bundled fixture (fixtureId "acme-prod"), an ' +
-      'inline array of AccessLogRecord objects, or real-world Apache/nginx Combined or Common Log Format text ' +
-      '(source "combined-log-format", one request per line in rawText) — the standard format most web servers ' +
-      'and reverse proxies can emit. This MUST be called before any analysis tool (get_api_topology, ' +
-      'list_shadow_endpoints, scan_authorization_risks, get_finding_evidence, export_reconstructed_spec, ' +
-      'generate_authz_test_suite) — those return NO_LOGS_INGESTED until this runs. Malformed lines/records are ' +
-      'rejected individually and reported, not treated as a fatal error for the whole batch. Note: Combined/Common ' +
-      'Log Format has no latency field (latencyMs will read 0) and no structured actor.role; actor.sub only ' +
-      'populates when the source server logged an authenticated user (rare unless HTTP Basic Auth or an auth-proxy ' +
-      'module was configured) — R1_CROSS_ACTOR and R2_ENUMERATION legitimately find nothing without it.',
+      'inline array of AccessLogRecord objects, real-world Apache/nginx Combined or Common Log Format text ' +
+      '(source "combined-log-format", one request per line in rawText), or real-world AWS Application Load ' +
+      'Balancer access log text (source "aws-alb", one request per line in rawText). This MUST be called before ' +
+      'any analysis tool (get_api_topology, list_shadow_endpoints, scan_authorization_risks, get_finding_evidence, ' +
+      'export_reconstructed_spec, generate_authz_test_suite) — those return NO_LOGS_INGESTED until this runs. ' +
+      'Malformed lines/records are rejected individually and reported, not treated as a fatal error for the whole ' +
+      'batch. Format-specific gaps, not bugs: Combined/Common Log Format has no latency field (latencyMs reads 0) ' +
+      'and only carries actor.sub when the source server logged an authenticated user (rare unless HTTP Basic Auth ' +
+      'or an auth-proxy module was configured); AWS ALB logs have real latency data but actor.sub/role are always ' +
+      'null (an ALB has no concept of an application-level authenticated user at all). Either way, ' +
+      'R1_CROSS_ACTOR and R2_ENUMERATION legitimately find nothing when actor.sub is never populated.',
     inputSchema: IngestAccessLogsSchema,
     examples: {
       request: { source: 'fixture', fixtureId: 'acme-prod' },
@@ -109,14 +111,14 @@ export class SurfaceTools {
     let rejectedCount: number;
     let rejectReasons: string[];
 
-    if (input.source === 'combined-log-format') {
+    if (input.source === 'combined-log-format' || input.source === 'aws-alb') {
       if (!input.rawText) {
-        return { ok: false, code: 'INVALID_INPUT', message: 'source "combined-log-format" requires "rawText" (one Apache/nginx Combined or Common Log Format request per line).', nextAction: 'retry with rawText: string' };
+        return { ok: false, code: 'INVALID_INPUT', message: `source "${input.source}" requires "rawText" (one request per line).`, nextAction: 'retry with rawText: string' };
       }
       if (input.rawText.length > MAX_INLINE_RECORDS * 200) {
         return { ok: false, code: 'PAYLOAD_TOO_LARGE', message: 'rawText is too large to ingest inline.', nextAction: 'split the log file into smaller chunks' };
       }
-      const parsed = parseCombinedLogFormat(input.rawText);
+      const parsed = input.source === 'combined-log-format' ? parseCombinedLogFormat(input.rawText) : parseAwsAlbLogFormat(input.rawText);
       valid = parsed.records;
       rejectedCount = parsed.rejected.count;
       rejectReasons = parsed.rejected.reasons;

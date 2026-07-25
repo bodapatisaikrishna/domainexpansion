@@ -58,3 +58,4 @@ export { neutralise, detectInjectionAttempt } from './sanitise.js';
 export { scoreFindings } from './score.js';
 export { exportReconstructedSpec, generateAuthzTestSuite } from './artifacts.js';
 export { parseCombinedLogFormat } from './adapters/combined-log-format.js';
+export { parseAwsAlbLogFormat } from './adapters/aws-alb.js';

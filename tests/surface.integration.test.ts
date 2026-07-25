@@ -136,4 +136,29 @@ describe('MCP surface: SurfaceTools', () => {
     const result = await tools.ingestAccessLogs({ source: 'combined-log-format' }, ctx);
     expect(result).toMatchObject({ ok: false, code: 'INVALID_INPUT' });
   });
+
+  it('ingests real AWS ALB access log text end to end through the real tool layer', async () => {
+    const tools = await buildTools();
+    const ctx = createMockContext();
+    const rawText = [
+      'https 2018-11-30T22:23:00.186641Z app/my-loadbalancer/50dc6c495c0c9188 192.168.131.39:2817 10.0.0.1:80 0.000 0.001 0.000 200 200 34 366 "GET https://www.example.com/orders/1 HTTP/1.1" "curl/7.46.0" - - arn:x "Root=1" "www.example.com" "-" 1 2018-11-30T22:22:48.364000Z "forward" "-" "-" "10.0.0.1:80" "200" "-" "-"',
+      'not an alb log line',
+    ].join('\n');
+
+    const result = await tools.ingestAccessLogs({ source: 'aws-alb', rawText }, ctx);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.data.counts).toBe(1);
+    expect(result.data.rejected.count).toBe(1);
+
+    const scan = await tools.scanAuthorizationRisks({}, ctx);
+    expect(scan.ok).toBe(true);
+  });
+
+  it('ingest_access_logs with source aws-alb and no rawText returns INVALID_INPUT', async () => {
+    const tools = await buildTools();
+    const ctx = createMockContext();
+    const result = await tools.ingestAccessLogs({ source: 'aws-alb' }, ctx);
+    expect(result).toMatchObject({ ok: false, code: 'INVALID_INPUT' });
+  });
 });
