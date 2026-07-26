@@ -1,8 +1,25 @@
+[![CI](https://github.com/bodapatisaikrishna/domainexpansion/actions/workflows/ci.yml/badge.svg)](https://github.com/bodapatisaikrishna/domainexpansion/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 ## Live deployment
 
 ## [https://domainexpansion-6a64d-neural-nexus-amrita-university-coimbatore.app.nitrocloud.ai/](https://domainexpansion-6a64d-neural-nexus-amrita-university-coimbatore.app.nitrocloud.ai/)
 
-Verified live via a real MCP JSON-RPC handshake (`initialize` → `tools/list`) — all 10 tools respond correctly with a real session id. Note: if you're reading this shortly after a `main` update, redeploy to pick up the latest commits; the CLI has no `login`/`deploy` command in the current published version, so deploys go through the NitroCloud dashboard rather than `nitrostack-cli`.
+Verified live via a real MCP JSON-RPC handshake (`initialize` → `tools/list`) — all 10 tools respond correctly with a real session id, and via a full manual pass through the actual chat interface (see "For judges" below). Deploys are auto-triggered by a push to `main` — every commit on this branch is live within minutes.
+
+## For judges: verify in under 2 minutes
+
+Open the live deployment link above (it's a chat interface — NitroChat) and paste this one prompt:
+
+> *"Ingest the acme-prod logs, import our OpenAPI spec, then scan for all authorization risks and show me the API topology."*
+
+Expect, in order: **8,252** records / **120** actors / **34** endpoints ingested → **27** documented against the spec → a ranked findings list covering **all seven detection rules** (R1 BOLA on `/api/v1/orders/{orderId}`, R2 enumeration on documents, R3 missing-auth on `/internal/v0/export/customers`, R4 an invoice status-leak, R5 seven shadow endpoints, R6 an unguarded webhook delete, R7 three log-injection attempts) → a topology graph with shadow endpoints visually flagged. `/api/v1/admin/feature-flags` and `/api/v1/auth/login` should show **zero** findings — they're the deliberate false-positive controls.
+
+Then, to see the rest of the surface in one more prompt:
+
+> *"Show me the evidence for the BOLA finding, generate a Jest regression test for it, and check the Stripe API from the APIs.guru registry against my traffic."*
+
+This was run against the live deployment on 2026-07-26 and passed on every point above — see the [full transcript walkthrough](#usage-the-demo-sequence) below for what each response should look like if you want to check line by line.
 
 ---
 
@@ -180,13 +197,27 @@ This does **not** prove the tool would have found real vulnerabilities already s
 - `source: 'combined-log-format'` — Apache/nginx Combined/Common Log Format (`src/engine/adapters/combined-log-format.ts`). No latency field (`latencyMs` reads 0), and `actor.sub` only populates when the source server was configured to log an authenticated user (HTTP Basic Auth or an auth-proxy module) — most real deployments don't do this by default.
 - `source: 'aws-alb'` — AWS Application Load Balancer access logs (`src/engine/adapters/aws-alb.ts`). Has real latency data (sum of the three ALB processing-time fields), but `actor.sub`/`role` are always `null` — an ALB sits below the application layer and has no concept of an authenticated user at all.
 
-**`R5_SHADOW`'s no-spec heuristic is exactly that — a heuristic.** It flags known internal/debug/legacy path prefixes and low-traffic endpoints with no OPTIONS/HEAD support. With a real spec imported, shadow classification is exact (position-based diff, not the heuristic).
+**`R5_SHADOW`'s no-spec heuristic is exactly that — a heuristic.** It flags known internal/debug/legacy path prefixes and low-traffic endpoints with no OPTIONS/HEAD support (with an API-shape pre-filter to exclude static assets — see [docs/DETECTION.md](docs/DETECTION.md)). With a real spec imported, shadow classification is exact (position-based diff, not the heuristic).
+
+**The live deployment does not enforce authentication.** Anyone with the URL can drive the tools directly — there's no OAuth/token check in front of this demo instance. For a tool whose purpose is finding *missing* authorization checks, this is worth stating plainly rather than waiting to be asked: it's an explicit scope decision for a hackathon demo (`@nitrostack/core`'s built-in `OAuthModule` supports wiring this in — see its startup warning in the server logs — it just isn't configured here), not an oversight discovered later.
+
+## How this maps to the judging rubric
+
+| Criterion | Where to look |
+|---|---|
+| **Technical quality** — correct Tools/Resources/Prompts, error handling, security | 10 tools / 5 resources / 4 prompts, all confirmed at the protocol level (see "For judges" above); every tool returns a typed `ToolResult`, never throws; the untrusted-input contract (`neutralise()`) is enforced once at the resource/tool boundary, not by each caller |
+| **Innovation** — novel use of MCP primitives, impactful data-source combinations | Findings are citable by `evidence://` URI rather than dumped into context; a real external registry (APIs.guru) diffs live traffic against a third party's *actual* published contract, not a mock |
+| **Real-world impact** — genuine problem, feasible, scalable | BOLA and shadow APIs are OWASP API Top 10 mainstays; validated against a real, uncurated 50,000-line third-party log corpus (NASA-HTTP), not only self-written fixtures — see "Real-data validation" below |
+| **Demo & presentation** | Live deployed link above, a 2-minute copy-paste verification sequence, and the full architecture/algorithm writeup in this file and [docs/DETECTION.md](docs/DETECTION.md) |
+| **Completeness** — working deployment, external integration, end-to-end | Deployed on NitroCloud, auto-redeploys on push, verified via both raw protocol calls and the actual chat UI; APIs.guru integration works fully offline once cache-warmed |
 
 ## Tests
 
 ```bash
-npm test          # vitest run — 64 tests across 8 files
+npm test          # vitest run — 100 tests across 12 files
 npm run typecheck # tsc --noEmit
 ```
+
+CI (`.github/workflows/ci.yml`) runs both on every push and pull request to `main` — the badge at the top of this file reflects the current state of `main`, not a claim.
 
 `tests/ground-truth.test.ts` is the load-bearing suite: it runs the real detection pipeline against the real fixture data and asserts all six ground-truth properties — every expected finding present at its minimum severity, the two control endpoints get nothing, the export/customers finding is CRITICAL with both rules, every finding has non-empty evidence and a well-formed `evidenceUri`, no finding echoes raw attacker text, and the whole pipeline is deterministic across repeated runs. Every other engine module (`templatise.ts`, `topology.ts`, `spec.ts`, `sanitise.ts`, `artifacts.ts`, the APIs.guru integration) has its own dedicated test file, plus `tests/surface.integration.test.ts` exercises the real MCP tool layer end to end via NitroStack's `TestingModule`.
