@@ -83,13 +83,13 @@ This project is an MCP server built on **[NitroStack](https://nitrostack.ai)**, 
 
 ## Features
 
-- 🔍 **Seven deterministic detection rules** — BOLA, enumeration, missing auth, existence oracles, shadow endpoints, unguarded writes, log injection — each mapped to a real CWE
-- 🧾 **Evidence-backed, always** — every finding cites the exact log records that triggered it, addressable by URI, never a bare assertion
-- 🛡️ **Structurally isolates untrusted input** — attacker-planted prompt-injection payloads in logs are neutralised before they ever reach an LLM or a screen
-- 🌐 **Real external data source** — diffs your live traffic against a real published API contract fetched from the APIs.guru registry, cache-first and offline-capable
-- 🔌 **MCP-native end to end** — 11 tools, 6 resources, 4 prompts, 5 interactive widgets, all confirmed at the protocol level, not just by counting decorators
-- 🧪 **Validated on real, uncurated data** — not only self-written fixtures; tested against a real 50,000-line third-party log corpus with a disclosed synthetic injection
-- ✅ **111 automated tests**, CI on every push, deployed live and auto-redeploying
+-  **Seven deterministic detection rules** — BOLA, enumeration, missing auth, existence oracles, shadow endpoints, unguarded writes, log injection — each mapped to a real CWE
+-  **Evidence-backed, always** — every finding cites the exact log records that triggered it, addressable by URI, never a bare assertion
+-  **Structurally isolates untrusted input** — attacker-planted prompt-injection payloads in logs are neutralised before they ever reach an LLM or a screen
+-  **Real external data source** — diffs your live traffic against a real published API contract fetched from the APIs.guru registry, cache-first and offline-capable
+-  **MCP-native end to end** — 11 tools, 6 resources, 4 prompts, 5 interactive widgets, all confirmed at the protocol level, not just by counting decorators
+-  **Validated on real, uncurated data** — not only self-written fixtures; tested against a real 50,000-line third-party log corpus with a disclosed synthetic injection
+- **111 automated tests**, CI on every push, deployed live and auto-redeploying
 
 ## How It Works: Deterministic Engine, Agentic Triage
 
