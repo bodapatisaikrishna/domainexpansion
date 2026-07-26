@@ -500,6 +500,6 @@ export class SurfaceTools {
       return { ok: false, code: 'INVALID_INPUT', message: `No records found for actor "${input.actorSub}".`, nextAction: 'call scan_authorization_risks or get_finding_evidence to find a real actor sub from the evidence' };
     }
     ctx.logger.info('Reconstructed attack session', { actorSub: input.actorSub, eventCount: session.eventCount, findings: session.findings.length });
-    return { ok: true, data: session } as const;
+    return { ok: true, data: session };
   }
 }
