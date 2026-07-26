@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🛡️ DomainExpansion.ai
+#  DomainExpansion.ai
 ### MCP-Native API Attack Surface & BOLA Detection Engine
 
 **Your API's real attack surface isn't what's in the spec. It's what's in the logs.**
@@ -12,7 +12,7 @@
 [![Built with NitroStack](https://img.shields.io/badge/Built%20with-NitroStack-0A66FF)](https://nitrostack.ai)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**[🚀 Live Demo](#live-deployment)** · **[⚡ 2-Minute Judge Verification](#for-judges-verify-in-under-2-minutes)** · **[📖 Detection Algorithms](docs/DETECTION.md)**
+**[Live Demo](#live-deployment)** · **[⚡ 2-Minute Judge Verification](#for-judges-verify-in-under-2-minutes)** · **[ Detection Algorithms](docs/DETECTION.md)**
 
 </div>
 
@@ -84,7 +84,6 @@ This project is an MCP server built on **[NitroStack](https://nitrostack.ai)**, 
 ## Features
 
 - 🔍 **Seven deterministic detection rules** — BOLA, enumeration, missing auth, existence oracles, shadow endpoints, unguarded writes, log injection — each mapped to a real CWE
-- 📖 **Story, not a list** — attack session reconstruction turns a flat findings list into a minute-by-minute narrative of what one account actually did
 - 🧾 **Evidence-backed, always** — every finding cites the exact log records that triggered it, addressable by URI, never a bare assertion
 - 🛡️ **Structurally isolates untrusted input** — attacker-planted prompt-injection payloads in logs are neutralised before they ever reach an LLM or a screen
 - 🌐 **Real external data source** — diffs your live traffic against a real published API contract fetched from the APIs.guru registry, cache-first and offline-capable
