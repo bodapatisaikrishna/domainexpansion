@@ -85,6 +85,46 @@ export interface Topology {
   };
 }
 
+export interface AttackSessionEvent {
+  recordId: string;
+  ts: string;
+  method: HttpMethod;
+  template: string;
+  path: string;               // neutralised — same untrusted-input contract as evidence records; carries the concrete object id in context
+  status: number;
+  findingIds: string[];
+}
+
+export interface AttackSessionGroup {
+  template: string;
+  method: HttpMethod;
+  firstTs: string;
+  lastTs: string;
+  count: number;
+  distinctObjectIds: number;
+  sampleObjectId: string | null;  // neutralised
+  findingIds: string[];
+}
+
+export interface AttackSessionFindingSummary {
+  id: string;
+  rule: RuleId;
+  severity: Severity;
+  template: string;
+}
+
+export interface AttackSession {
+  actorSub: string;
+  eventCount: number;
+  timeRange: { from: string; to: string };
+  durationSeconds: number;
+  distinctTemplates: number;
+  distinctObjectIds: number;
+  findings: AttackSessionFindingSummary[];
+  groups: AttackSessionGroup[];
+  events: AttackSessionEvent[];
+}
+
 // ---- MCP layer contracts ----
 
 export type ToolErrorCode =

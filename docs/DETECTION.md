@@ -139,6 +139,16 @@ severity:  CRITICAL ≥85   HIGH ≥65   MEDIUM ≥40   else LOW
 
 Final sort: score descending, then template ascending, via a stable sort — ties beyond that retain the original rule-evaluation order (R1, R2, R3, R4, R5, R6, R7), which is itself fixed by `runDetection`.
 
+## 6a. Attack session reconstruction (`src/engine/session.ts`)
+
+`reconstructAttackSession(actorSub, records, templates, findings)` is presentation-shaping, not detection — it introduces no new attack-detection logic, only a time-ordered, grouped view of facts §5's rules already established.
+
+**Two views built from one sorted list.** `events`: every record belonging to `actorSub`, sorted by `(ts, id)` for a total deterministic order. `groups`: consecutive events sharing the same `(template, method)` collapsed into one entry with a `count`, a `distinctObjectIds` count, and a `sampleObjectId` — this is what turns "340 individual GET requests" into one line reading `×340 (340 distinct)`.
+
+**Cross-referencing findings without re-running detection.** Every `Finding.evidence` array already lists the record ids that triggered it; `session.ts` inverts that into a `recordId -> findingId[]` index once, then tags each event (and by extension each group, and the session's top-level `findings` summary) with whichever findings its own evidence implicates. A finding never has to be recomputed to know which part of the timeline it belongs to.
+
+**The untrusted-input contract applies identically here.** The per-event `path` field is `neutralise()`'d before being returned, exactly like `get_finding_evidence`'s records. A raw, un-neutralised `objectId` field was deliberately *not* added to the public event shape during design — it would have been a second copy of the same attacker-controlled string reaching the response unwrapped, so the concrete object id only ever appears pre-neutralised, either inside the group's `sampleObjectId` or in context inside the event's `path`.
+
 ## 7. False-positive controls, summarised
 
 | Risk | Control |

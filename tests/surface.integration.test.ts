@@ -183,4 +183,36 @@ describe('MCP surface: SurfaceTools', () => {
     expect(result.data.logsIngested).toBe(true);
     expect(result.suggestedNext?.[0]).toMatchObject({ tool: 'get_api_topology' });
   });
+
+  it('reconstruct_attack_session on empty state returns NO_LOGS_INGESTED', async () => {
+    const tools = await buildTools();
+    const ctx = createMockContext();
+    const result = await tools.reconstructAttackSessionTool({ actorSub: 'usr_7741' }, ctx);
+    expect(result).toMatchObject({ ok: false, code: 'NO_LOGS_INGESTED' });
+  });
+
+  it('reconstruct_attack_session with an unknown actor returns INVALID_INPUT, not a throw', async () => {
+    const tools = await buildTools();
+    const ctx = createMockContext();
+    await tools.ingestAccessLogs({ source: 'fixture', fixtureId: 'acme-prod' }, ctx);
+    const result = await tools.reconstructAttackSessionTool({ actorSub: 'usr_does_not_exist' }, ctx);
+    expect(result).toMatchObject({ ok: false, code: 'INVALID_INPUT' });
+  });
+
+  it('reconstruct_attack_session reconstructs usr_7741\'s real enumeration burst through the real tool layer', async () => {
+    const tools = await buildTools();
+    const ctx = createMockContext();
+    await tools.ingestAccessLogs({ source: 'fixture', fixtureId: 'acme-prod' }, ctx);
+    await tools.importOpenApiSpec({ source: 'fixture', fixtureId: 'acme-openapi' }, ctx);
+    const result = await tools.reconstructAttackSessionTool({ actorSub: 'usr_7741' }, ctx);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.data.findings.some((f) => f.rule === 'R2_ENUMERATION')).toBe(true);
+    const docsGroup = result.data.groups.find((g) => g.template === '/api/v1/users/{userId}/documents/{docId}');
+    expect(docsGroup?.distinctObjectIds).toBeGreaterThanOrEqual(60);
+    // every path in the timeline is neutralised, never raw
+    for (const event of result.data.events) {
+      expect(event.path).toMatch(/^<untrusted field="path">.*<\/untrusted>$/);
+    }
+  });
 });

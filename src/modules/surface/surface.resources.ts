@@ -2,7 +2,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { ResourceDecorator as Resource, ExecutionContext, Injectable } from '@nitrostack/core';
 import type { AccessLogRecord } from '../../engine/types.js';
-import { runDetection, exportReconstructedSpec, neutralise } from '../../engine/index.js';
+import { runDetection, exportReconstructedSpec, neutralise, reconstructAttackSession } from '../../engine/index.js';
 import { fetchSpec } from '../../integrations/apisguru.js';
 import { SurfaceStateService } from './state.js';
 
@@ -111,6 +111,34 @@ export class SurfaceResources {
     const spec = exportReconstructedSpec(templates, findings, records);
     ctx.logger.info('Served reconstructed spec resource');
     return textResource(uri, JSON.stringify(spec, null, 2));
+  }
+
+  @Resource({
+    uri: 'session://actor/{sub}',
+    name: 'Attack session reconstruction',
+    description:
+      'One actor\'s full request history as a chronological, grouped narrative by concrete URI, e.g. ' +
+      '"session://actor/usr_7741" — {sub} MUST be replaced with an actual actor sub (pull one from a finding\'s ' +
+      'evidence via get_finding_evidence or evidence://finding/{findingId}); the bare template URI will not ' +
+      'resolve. To generate this for a specific finding\'s actor in one step, call the reconstruct_attack_session ' +
+      'TOOL instead — this resource is for direct inspection by URI once you already know the actor sub. ' +
+      '<untrusted> note: every path in the timeline is neutralised, same contract as evidence records.',
+    mimeType: 'application/json',
+  })
+  async getAttackSession(uri: string, ctx: ExecutionContext) {
+    const sub = uri.split('session://actor/')[1] ?? '';
+    if (!this.state.hasLogs()) {
+      return textResource(uri, JSON.stringify({ error: 'No access logs ingested yet.' }, null, 2));
+    }
+    const records = this.state.getRecords();
+    const { documentedTemplates } = this.state.computeDocumented();
+    const { findings, templates } = runDetection(records, documentedTemplates);
+    const session = reconstructAttackSession(sub, records, templates, findings);
+    if (!session) {
+      return textResource(uri, JSON.stringify({ error: `No records found for actor "${sub}".` }, null, 2));
+    }
+    ctx.logger.info('Served attack session resource', { sub, eventCount: session.eventCount });
+    return textResource(uri, JSON.stringify(session, null, 2));
   }
 
   @Resource({

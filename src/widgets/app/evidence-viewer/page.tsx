@@ -3,7 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import { useWidgetSDK } from '@nitrostack/widgets';
-import { palette, ErrorBanner, LoadingState, WidgetShell } from '../../components/ui';
+import { palette, ErrorBanner, LoadingState, WidgetShell, UntrustedField, statusColor } from '../../components/ui';
 
 interface EvidenceRecord {
   id: string;
@@ -23,43 +23,6 @@ type ToolResult = { ok: true; data: EvidenceRecord[] } | { ok: false; message: s
 function formatBytes(n: number): string {
   if (n < 1024) return `${n}B`;
   return `${(n / 1024).toFixed(1)}KB`;
-}
-
-function statusColor(status: number): string {
-  if (status >= 500) return palette.severity.CRITICAL;
-  if (status >= 400) return palette.severity.HIGH;
-  if (status >= 300) return palette.severity.MEDIUM;
-  return palette.success;
-}
-
-/**
- * Renders a neutralise()-wrapped field as literal, inert text — never via
- * dangerouslySetInnerHTML. React already escapes string children by default,
- * so the "<untrusted field=...>" markup the engine produced is visibly
- * printed as text, not interpreted as HTML. That's the actual security
- * property: even a payload that evaded every pattern still reads on screen
- * as quarantined data, not as a live tag.
- */
-function UntrustedField({ value }: { value: string | null }) {
-  if (value === null) return <span style={{ color: palette.textFaint }}>—</span>;
-  return (
-    <div
-      style={{
-        display: 'inline-block',
-        fontFamily: palette.mono,
-        fontSize: 11,
-        color: palette.shadow,
-        background: '#1a1408',
-        border: `1px dashed ${palette.shadow}`,
-        borderRadius: 4,
-        padding: '2px 6px',
-        maxWidth: '100%',
-        overflowWrap: 'anywhere',
-      }}
-    >
-      {value}
-    </div>
-  );
 }
 
 export default function EvidenceViewerWidget() {

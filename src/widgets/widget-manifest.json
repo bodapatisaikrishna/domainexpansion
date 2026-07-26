@@ -122,7 +122,36 @@
                 }
             ],
             "tags": ["scorecard", "summary"]
+        },
+        {
+            "uri": "/attack-timeline",
+            "name": "Attack Session Timeline",
+            "description": "One actor's full request history reconstructed as a chronological, grouped narrative — a minute-by-minute story instead of a flat findings list",
+            "examples": [
+                {
+                    "name": "usr_7741 enumeration burst",
+                    "description": "A 60-request document enumeration burst collapsed into one CRITICAL-flagged timeline entry",
+                    "data": {
+                        "ok": true,
+                        "data": {
+                            "actorSub": "usr_7741",
+                            "eventCount": 80,
+                            "timeRange": { "from": "2026-07-24T12:32:47.940Z", "to": "2026-07-24T17:58:26.981Z" },
+                            "durationSeconds": 19539,
+                            "distinctTemplates": 10,
+                            "distinctObjectIds": 65,
+                            "findings": [
+                                { "id": "r2_enumeration_e7092172bf11", "rule": "R2_ENUMERATION", "severity": "CRITICAL", "template": "/api/v1/users/{userId}/documents/{docId}" }
+                            ],
+                            "groups": [
+                                { "template": "/api/v1/users/{userId}/documents/{docId}", "method": "GET", "firstTs": "2026-07-24T14:46:41.387Z", "lastTs": "2026-07-24T14:48:04.749Z", "count": 60, "distinctObjectIds": 60, "sampleObjectId": "<untrusted field=\"objectId\">2650</untrusted>", "findingIds": ["r2_enumeration_e7092172bf11"] }
+                            ]
+                        }
+                    }
+                }
+            ],
+            "tags": ["timeline", "narrative", "attack-session"]
         }
     ],
-    "generatedAt": "2026-07-25T00:00:00.000Z"
+    "generatedAt": "2026-07-26T00:00:00.000Z"
 }

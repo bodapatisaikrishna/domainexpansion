@@ -2,7 +2,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { ToolDecorator as Tool, Widget, ExecutionContext, Injectable, z } from '@nitrostack/core';
 import type { AccessLogRecord, ToolResult, Severity } from '../../engine/types.js';
-import { runDetection, aggregateEndpoints, buildTopology, parseOpenApiTemplates, neutralise, exportReconstructedSpec, generateAuthzTestSuite, parseCombinedLogFormat, parseAwsAlbLogFormat } from '../../engine/index.js';
+import { runDetection, aggregateEndpoints, buildTopology, parseOpenApiTemplates, neutralise, exportReconstructedSpec, generateAuthzTestSuite, parseCombinedLogFormat, parseAwsAlbLogFormat, reconstructAttackSession } from '../../engine/index.js';
 import { listProviders, listServices, fetchSpec } from '../../integrations/apisguru.js';
 import { SurfaceStateService } from './state.js';
 import { toYaml } from './yaml.js';
@@ -54,6 +54,7 @@ const ScanAuthorizationRisksSchema = z.object({ minSeverity: z.enum(['LOW', 'MED
 const GetFindingEvidenceSchema = z.object({ findingId: z.string() });
 const ExportReconstructedSpecSchema = z.object({ format: z.enum(['json', 'yaml']).optional() });
 const GenerateAuthzTestSuiteSchema = z.object({ findingId: z.string(), framework: z.enum(['jest', 'pytest']).optional() });
+const ReconstructAttackSessionSchema = z.object({ actorSub: z.string() });
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -470,5 +471,35 @@ export class SurfaceTools {
     const suite = generateAuthzTestSuite(finding, input.framework ?? 'jest');
     ctx.logger.info('Generated authz test suite', { findingId: input.findingId, framework: input.framework ?? 'jest' });
     return { ok: true, data: suite } as const;
+  }
+
+  @Tool({
+    name: 'reconstruct_attack_session',
+    description:
+      'Reconstructs one actor\'s entire request history as a chronological narrative — a minute-by-minute story of ' +
+      'what that account actually did, not a rule-by-rule findings list. Groups consecutive same-endpoint requests ' +
+      'together (e.g. "walked /orders/{orderId} across 340 distinct IDs" reads as one entry, not 340), and cross- ' +
+      'references every group against the findings it triggered. Use this after scan_authorization_risks to turn a ' +
+      'specific finding\'s actor into a concrete story — pull the actor sub from a finding\'s evidence (via ' +
+      'get_finding_evidence) if you don\'t already have one. <untrusted> note: every path shown is neutralised, ' +
+      'same contract as get_finding_evidence. Requires ingest_access_logs first.',
+    inputSchema: ReconstructAttackSessionSchema,
+    examples: {
+      request: { actorSub: 'usr_7741' },
+      response: { actorSub: 'usr_7741', eventCount: 60, distinctObjectIds: 60, findings: [{ id: 'r2_enumeration_...', rule: 'R2_ENUMERATION', severity: 'CRITICAL', template: '/api/v1/users/{userId}/documents/{docId}' }] },
+    },
+  })
+  @Widget('attack-timeline')
+  async reconstructAttackSessionTool(input: z.infer<typeof ReconstructAttackSessionSchema>, ctx: ExecutionContext) {
+    if (!this.state.hasLogs()) return noLogsError();
+    const records = this.state.getRecords();
+    const { documentedTemplates } = this.state.computeDocumented();
+    const { findings, templates } = runDetection(records, documentedTemplates);
+    const session = reconstructAttackSession(input.actorSub, records, templates, findings);
+    if (!session) {
+      return { ok: false, code: 'INVALID_INPUT', message: `No records found for actor "${input.actorSub}".`, nextAction: 'call scan_authorization_risks or get_finding_evidence to find a real actor sub from the evidence' };
+    }
+    ctx.logger.info('Reconstructed attack session', { actorSub: input.actorSub, eventCount: session.eventCount, findings: session.findings.length });
+    return { ok: true, data: session } as const;
   }
 }

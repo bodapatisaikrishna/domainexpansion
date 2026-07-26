@@ -5,7 +5,7 @@
 
 ## [https://domainexpansion-6a64d-neural-nexus-amrita-university-coimbatore.app.nitrocloud.ai/](https://domainexpansion-6a64d-neural-nexus-amrita-university-coimbatore.app.nitrocloud.ai/)
 
-Verified live via a real MCP JSON-RPC handshake (`initialize` → `tools/list`) — all 10 tools respond correctly with a real session id, and via a full manual pass through the actual chat interface (see "For judges" below). Deploys are auto-triggered by a push to `main` — every commit on this branch is live within minutes.
+Verified live via a real MCP JSON-RPC handshake (`initialize` → `tools/list`) — all 11 tools respond correctly with a real session id, and via a full manual pass through the actual chat interface (see "For judges" below). Deploys are auto-triggered by a push to `main` — every commit on this branch is live within minutes.
 
 ## For judges: verify in under 2 minutes
 
@@ -17,7 +17,9 @@ Expect, in order: **8,252** records / **120** actors / **34** endpoints ingested
 
 Then, to see the rest of the surface in one more prompt:
 
-> *"Show me the evidence for the BOLA finding, generate a Jest regression test for it, and check the Stripe API from the APIs.guru registry against my traffic."*
+> *"Show me the evidence for the BOLA finding, generate a Jest regression test for it, reconstruct the attack session for the account behind the enumeration finding, and check the Stripe API from the APIs.guru registry against my traffic."*
+
+The reconstructed session should read as a story, not a list: a handful of ordinary single requests, then one entry reading **"×60 (60 distinct)"** on `/api/v1/users/{userId}/documents/{docId}` with a CRITICAL marker — the entire enumeration burst collapsed into one line instead of 60.
 
 This was run against the live deployment on 2026-07-26 and passed on every point above — see the [full transcript walkthrough](#usage-the-demo-sequence) below for what each response should look like if you want to check line by line.
 
@@ -55,6 +57,12 @@ All seven rules declared in the type system are implemented.
 
 Full algorithms, the scoring formula, and the false-positive controls are in [docs/DETECTION.md](docs/DETECTION.md).
 
+## Attack session reconstruction: the story, not the list
+
+Every security tool outputs a ranked list of findings. `reconstruct_attack_session(actorSub)` outputs a story instead: one actor's entire request history, sorted chronologically and grouped by consecutive same-endpoint activity, with every group cross-referenced against the findings it triggered. `usr_7741`'s session on `acme-prod` doesn't read as "60 log lines" — it reads as a handful of ordinary single requests, then one line: `GET /api/v1/users/{userId}/documents/{docId} ×60 (60 distinct) — CRITICAL`, the entire document-enumeration burst collapsed into a single, obvious moment in an otherwise unremarkable session.
+
+This adds no new detection logic — `src/engine/session.ts` is a pure reduction of records, templates, and findings the seven rules already produced, grouped by time instead of by rule. Same untrusted-input contract as everywhere else: every path shown is `neutralise()`'d before it reaches the tool response, the widget, or the model. Exposed as the `reconstruct_attack_session` tool, the `session://actor/{sub}` resource, and the `attack_timeline` widget.
+
 ## Security considerations
 
 **The untrusted-input contract.** Every access-log record contains attacker-controlled strings — path, query, User-Agent. Any one of those that can reach a tool response or an LLM prompt passes through `neutralise()` (`src/engine/sanitise.ts`) first, with no exceptions.
@@ -75,11 +83,11 @@ Worth flagging: the build spec this project follows describes the document endpo
 
 ## MCP surface
 
-10 tools, 5 resources, 4 prompts — confirmed at the protocol level (`"Application initialized with 10 tools, 5 resources, 4 prompts"`), not just by counting decorators.
+11 tools, 6 resources, 4 prompts — confirmed at the protocol level (a live `tools/list` call returns exactly these 11 names), not just by counting decorators.
 
-**Tools:** `ingest_access_logs`, `import_openapi_spec`, `browse_spec_registry`, `import_registry_spec`, `get_api_topology`, `list_shadow_endpoints`, `scan_authorization_risks`, `get_finding_evidence`, `export_reconstructed_spec`, `generate_authz_test_suite`. Every tool returns `{ok:true, data, suggestedNext?}` or `{ok:false, code, message, nextAction}` — none ever throws. `suggestedNext` is populated on every success so an agent can walk the whole investigation (ingest → import spec → scan → fetch evidence → generate a regression test) without being told the next step by a human.
+**Tools:** `ingest_access_logs`, `import_openapi_spec`, `browse_spec_registry`, `import_registry_spec`, `get_api_topology`, `list_shadow_endpoints`, `scan_authorization_risks`, `get_finding_evidence`, `reconstruct_attack_session`, `export_reconstructed_spec`, `generate_authz_test_suite`. Every tool returns `{ok:true, data, suggestedNext?}` or `{ok:false, code, message, nextAction}` — none ever throws. `suggestedNext` is populated on every success so an agent can walk the whole investigation (ingest → import spec → scan → fetch evidence → reconstruct the session → generate a regression test) without being told the next step by a human.
 
-**Resources:** `logs://fixtures/{scenarioId}`, `registry://apisguru/{provider}/{service}`, `evidence://finding/{findingId}`, `spec://reconstructed/latest`, `findings://latest`. The evidence resource is the deliberate design bet here: findings are **citable by URI** rather than dumped into the model's context wholesale. An agent — or a human reading the transcript — can trace exactly which log lines justify a claim, and the untrusted-input contract is enforced exactly once, at the resource, instead of by every caller remembering to neutralise it themselves.
+**Resources:** `logs://fixtures/{scenarioId}`, `registry://apisguru/{provider}/{service}`, `evidence://finding/{findingId}`, `session://actor/{sub}`, `spec://reconstructed/latest`, `findings://latest`. The evidence and session resources are the deliberate design bet here: findings — and now whole attack narratives — are **citable by URI** rather than dumped into the model's context wholesale. An agent — or a human reading the transcript — can trace exactly which log lines justify a claim, and the untrusted-input contract is enforced exactly once, at the resource, instead of by every caller remembering to neutralise it themselves.
 
 **Prompts:** `audit_brief`, `exec_summary`, `remediation_plan`, `incident_handoff`.
 
@@ -97,6 +105,7 @@ src/
 │   ├── rules/             R1–R7, one file each, shared DetectionContext
 │   ├── score.ts           scoreFindings — exposure/sensitivity multipliers, R5 escalation
 │   ├── artifacts.ts       exportReconstructedSpec, generateAuthzTestSuite
+│   ├── session.ts         reconstructAttackSession — presentation-shaping only, no new detection logic
 │   └── index.ts           runDetection — the engine's single entry point
 ├── integrations/
 │   └── apisguru.ts    the ONLY network-calling code — cache-first, never throws
@@ -105,7 +114,7 @@ src/
 │   ├── surface.tools.ts, surface.resources.ts, surface.prompts.ts, surface.module.ts
 │   └── yaml.ts            dependency-free JSON->YAML for export_reconstructed_spec
 ├── widgets/           React presentation only — bound 1:1 to a tool via @Widget
-│   └── app/{topology-graph,findings-list,evidence-viewer,surface-scorecard}/page.tsx
+│   └── app/{topology-graph,findings-list,evidence-viewer,surface-scorecard,attack-timeline}/page.tsx
 ├── app.module.ts, index.ts
 fixtures/
 ├── logs/acme-prod.jsonl       8,252 seeded access-log records
@@ -142,8 +151,9 @@ Copy-pasteable agent prompts, in order:
 3. *"Show me the API topology."* → `get_api_topology({})` — renders the `topology_graph` widget
 4. *"Scan for authorization risks."* → `scan_authorization_risks({})` — renders `findings_list`; expect `/internal/v0/export/customers` CRITICAL with both `R3_AUTH_GAP` and `R5_SHADOW`
 5. *"Show me the evidence for the top finding."* → `get_finding_evidence({ findingId: '<id from step 4>' })` — renders `evidence_viewer`
-6. *"Generate a regression test for that finding."* → `generate_authz_test_suite({ findingId: '<id>' })`
-7. *"What providers does the APIs.guru registry have?"* → `browse_spec_registry({})`, then `import_registry_spec({ provider: 'stripe.com' })` to diff traffic against a real published contract
+6. *"Reconstruct the attack session for that finding's actor."* → `reconstruct_attack_session({ actorSub: '<sub from the evidence records>' })` — renders `attack_timeline`: the actor's whole request history as a grouped, chronological narrative, not another findings list. On `usr_7741` this reads as a handful of ordinary single requests, then one line — `×60 (60 distinct)` on `/api/v1/users/{userId}/documents/{docId}`, CRITICAL — instead of 60 separate rows.
+7. *"Generate a regression test for that finding."* → `generate_authz_test_suite({ findingId: '<id>' })`
+8. *"What providers does the APIs.guru registry have?"* → `browse_spec_registry({})`, then `import_registry_spec({ provider: 'stripe.com' })` to diff traffic against a real published contract
 
 ## Sample dataset
 
@@ -205,7 +215,7 @@ This does **not** prove the tool would have found real vulnerabilities already s
 
 | Criterion | Where to look |
 |---|---|
-| **Technical quality** — correct Tools/Resources/Prompts, error handling, security | 10 tools / 5 resources / 4 prompts, all confirmed at the protocol level (see "For judges" above); every tool returns a typed `ToolResult`, never throws; the untrusted-input contract (`neutralise()`) is enforced once at the resource/tool boundary, not by each caller |
+| **Technical quality** — correct Tools/Resources/Prompts, error handling, security | 11 tools / 6 resources / 4 prompts, all confirmed at the protocol level (see "For judges" above); every tool returns a typed `ToolResult`, never throws; the untrusted-input contract (`neutralise()`) is enforced once at the resource/tool boundary, not by each caller |
 | **Innovation** — novel use of MCP primitives, impactful data-source combinations | Findings are citable by `evidence://` URI rather than dumped into context; a real external registry (APIs.guru) diffs live traffic against a third party's *actual* published contract, not a mock |
 | **Real-world impact** — genuine problem, feasible, scalable | BOLA and shadow APIs are OWASP API Top 10 mainstays; validated against a real, uncurated 50,000-line third-party log corpus (NASA-HTTP), not only self-written fixtures — see "Real-data validation" below |
 | **Demo & presentation** | Live deployed link above, a 2-minute copy-paste verification sequence, and the full architecture/algorithm writeup in this file and [docs/DETECTION.md](docs/DETECTION.md) |
@@ -214,7 +224,7 @@ This does **not** prove the tool would have found real vulnerabilities already s
 ## Tests
 
 ```bash
-npm test          # vitest run — 100 tests across 12 files
+npm test          # vitest run — 111 tests across 13 files
 npm run typecheck # tsc --noEmit
 ```
 
